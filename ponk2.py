@@ -1,8 +1,20 @@
-from random import randint, choice
+from collections import deque
+from random import choice, randint, random, sample
 from comparator import compare_raw
+import numpy as np
+from keras.layers import Dense
+from keras.models import Sequential
+from keras.optimizers import Adam
+import math
 
 VALUES = ['2','3','4','5','6','7','8','9','10','J','Q','K','A']
 SUITS = ['C','D','H','S']
+
+BATCH_SIZE = 20
+GAMMA = 0.95
+EXPLORATION_MAX = 1.0
+EXPLORATION_MIN = 0.01
+EXPLORATION_DECAY = 0.998
 
 class Card:
     def __init__(self, value, suit):
@@ -32,6 +44,11 @@ class Card:
             card.append(self.value)
         card.append(self.suit.lower())
         return ''.join(card)
+
+    def card_to_one_hot(self):
+        hot = np.zeros((4,13))
+        hot[SUITS.index(self.suit),VALUES.index(self.value)] = 1
+        return hot
 
 
 class Deck:
@@ -67,6 +84,11 @@ class Deck:
 
     def convert(self):
         return ''.join([c.convert() for c in self.cards])
+
+    def to_array(self):
+        if len(self.cards) == 0:
+            return np.zeros([4,13])
+        return sum([c.card_to_one_hot() for c in self.cards])
 
 
 class Hand(Deck):
@@ -122,9 +144,6 @@ class Player:
 
     def get_money_diff(self):
         return self.INIT_MONEY - self.money
-
-    def final_stats(self):
-        pass
 
 
 class Ponk:
@@ -184,7 +203,6 @@ class Ponk:
     def win(self):
         self.give_player_earnings(self.winner)
         print(str(self.players[self.winner].name) + " has won!")
-        self.reset_for_next_hand()
 
     def current_player(self):
         return self.players[self.turn]
@@ -206,6 +224,13 @@ class Ponk:
         for i in range(self.num_players):
             for j in self.show_player(i):
                 print(j)
+
+    def get_folded_players(self):
+        folded = []
+        for i in range(self.num_players):
+            if i not in self.players_playing:
+                folded.append(i)
+        return folded
 
     def check_equal_bets(self):
         bet = self.players[self.players_playing[0]].bet_amount
@@ -256,9 +281,13 @@ class Ponk:
             self.winner = self.compare_hands()[0]
             self.win()
             self.round = 0
+        elif all(self.players[p].money == 0 for p in self.players_playing):
+            self.deal_com_cards(5-len(self.com_cards.cards))
+            self.winner = self.compare_hands()[0]
+            self.win()
+            self.round = 0
         else:
             self.round += 1
-        self.start_round()
 
     def give_player_earnings(self, p_index):
         self.players[p_index].change_money(self.pot)
@@ -272,7 +301,7 @@ class Ponk:
 
 
     def check_turn(self):
-        while True:
+        while self.winner is None:
             if self.turn == self.start_turn:
                 self.rotations += 1
                 if self.rotations == 2 and self.check:
@@ -293,21 +322,21 @@ class Ponk:
                 self.step_turn()
                 continue
             print("turn: " + str(self.turn))
-            self.print_players()
+            #self.print_players()
             break
 
-    def take_turn(self):
-        crf = input(self.get_turn_name() + ": Call, Raise or Fold? (c/r[amount]/f)")
+    def take_turn(self, action):
+        #crf = input(self.get_turn_name() + ": Call, Raise or Fold? (c/r[amount]/f)")
         #crf = self.observe()
-        if crf == 'f':
+        if action == 'f':
             self.fold(self.turn)
-        elif crf == 'c':
+        elif action == 'c':
             bet = self.get_previous_bet(self.turn)
             self.players[self.turn].raise_bet(bet - self.players[self.turn].bet_amount)
-        elif crf[0] == 'r':
+        elif action[0] == 'r':
             if self.check:
                 self.check = False
-            r = abs(int(crf[1:]))
+            r = abs(math.ceil(float(action[1:])))
             self.players[self.turn].raise_bet(r + self.get_previous_bet(self.turn) - self.players[self.turn].bet_amount)
         else:
             raise Exception
@@ -328,13 +357,32 @@ class Ponk:
         self.turn = self.start_turn
         self.rotations = 0
 
+    def collect_data(self):
+        p = self.players[self.turn]
+
+        # 52 for hand, 52 for community cards, 3 for moneys, 3 for bets, 3 for turn (or num players) = 113
+        h = p.hand.to_array().ravel()
+        c = self.com_cards.to_array().ravel()
+        m = np.array([m.money/m.INIT_MONEY for m in self.players])
+        b = np.array([i.bet_amount for i in self.players])
+        t = np.zeros((self.num_players,))
+        t[self.turn] = 1
+        data = np.concatenate((h, c, m, b, t))
+        return data
+
     def observe(self):
         self.check_turn()
-        return self.turn
+        w = -1 if self.winner == None else self.winner
+        return self.collect_data(), self.players[self.turn].get_money_diff(), w
 
-    def step(self):
+    def step(self, action):
         if self.winner is None:
-            self.take_turn()
+            if action[0] == 0:
+                self.take_turn('c')
+            elif action[0] == 1:
+                self.take_turn('r' + str(action[1]*self.players[self.turn].money))
+            elif action[0] == 2:
+                self.take_turn('f')
 
     def reset_for_next_hand(self):
         self.winner = None
@@ -343,24 +391,102 @@ class Ponk:
         for i,p in enumerate(self.players):
             p.fold = False
             p.hand = Hand()
+            p.money = p.INIT_MONEY
+            p.reset_init_money_to_money()
             self.players_playing.append(i)
         self.dealer = self.mod(self.dealer + 1)
         self.deck = Deck()
         self.com_cards = Hand()
 
+#'''
+class Agent:
+    def __init__(self):
+        self.memory = deque(maxlen=1000000)
+        self.exploration_rate = 1
+        self.model = Sequential()
+        self.model.add(Dense(128, input_shape=(113,), activation='relu'))
+        self.model.add(Dense(3+1, activation='relu'))
+        self.model.compile(loss="mse", optimizer=Adam(lr=0.001))
 
+    def remember(self, *args):
+        self.memory.append(tuple(args))
 
+    def next_action(self, state):
+        if np.random.rand() < self.exploration_rate:
+            out = np.random.rand((4,))
+            return out
+        q_values = self.model.predict(state)
+        return np.argmax(q_values[0][:3]), q_values[0][3]
 
-ponker = Ponk(1)
-ponker.add_player(1000,"Alice")
-ponker.add_player(1000,"Bob")
-ponker.add_player(1000,"Clarisse")
+    def process(self, states_short_term, winner, folded):
+        # To save states as (state, action, next_state, reward)
+        # The reward is calculated after the hand is complete
+        for s in states_short_term:
+            win = True if s[0] == winner else False
+            fold = True if s[0] in folded else False
+            if fold:
+                reward = s[4]/4
+            else:
+                reward = s[4]
+
+            self.remember(s[1], s[2], s[3], reward, s[5])
+
+    def experience_replay(self):
+        if len(self.memory) < BATCH_SIZE:
+            return
+        batch = sample(self.memory, BATCH_SIZE)
+        for state, action, next_state, reward, end in batch:
+            q_update = reward
+            if not end:
+                print(next_state)
+                q_update = (reward + GAMMA * np.amax(self.model.predict(np.array([next_state,]))[0][:3]))  # Find optimal Q value.
+                # Index is only because predict returns a multidim array but only one input was given, so only one output is given just with shape (1,2)
+            q_values = self.model.predict(np.array([state,]))
+            q_values[0][action[0]] = q_update
+            self.model.fit(state, q_values, verbose=0)
+        self.exploration_rate *= EXPLORATION_DECAY
+        self.exploration_rate = max(EXPLORATION_MIN, self.exploration_rate)
+
+def main():
+    agent = Agent()
+    game = Ponk(1)
+    game.add_player(1000, "Alice")
+    game.add_player(1000, "Bob")
+    game.add_player(1000, "Clarisse")
+
+    while True:
+        game.start_round()
+        states_short_term = []
+        w = -1
+        state = game.observe()[0]
+        while w == -1:
+            turn = game.turn
+            action = agent.next_action(state)
+            #print(action)
+            game.step(action)
+            next_state, money_change, w = game.observe()
+            #print(w)
+            end = False if w is -1 else True
+            states_short_term.append((turn, state, action, next_state, money_change, end))
+            state = next_state
+            agent.experience_replay()
+        agent.process(states_short_term, winner=w, folded=game.get_folded_players())
+
+        game.reset_for_next_hand()
+
+if __name__ == "__main__":
+    main()
+#'''
+
 
 #for i in ponker.current_player_show():
 #    print(i)
+#game = Ponk(1)
+#game.add_player(1000, "Alice")
+#game.add_player(1000, "Bob")
+#game.add_player(1000, "Clarisse")
+#game.start_round()
 
-ponker.start_round()
-
-while True:
-    print(ponker.observe())
-    ponker.step()
+#while True:
+#    print(game.observe())
+#    game.step('c')
