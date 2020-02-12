@@ -1,7 +1,7 @@
 from collections import deque
 from random import randint, random, sample
-from keras.layers import Dense
-from keras.models import Sequential
+from keras.layers import Input, Dense, concatenate
+from keras.models import Model
 from keras.optimizers import Adam
 import numpy as np
 from ponk2 import Ponk
@@ -16,10 +16,18 @@ class Agent:
     def __init__(self):
         self.memory = deque(maxlen=1000000)
         self.exploration_rate = 1
-        self.model = Sequential()
-        self.model.add(Dense(128, input_shape=(113,), activation='relu'))
-        self.model.add(Dense(3+1, activation='relu'))
-        self.model.compile(loss="mse", optimizer=Adam(lr=0.001))
+        self.model = self.create_model()
+
+    def create_model(self):
+        input = Input(shape=(113,))
+        x = Dense(128, activation="relu")(input)
+        output_move = Dense(3, activation="linear")(x)
+        output_raise = Dense(1, activation="relu")(x)
+        output = concatenate([output_move, output_raise], axis=1)
+
+        model = Model(inputs=input, outputs=output)
+        model.compile(optimizer=Adam(lr=0.001), loss="mse")
+        return model
 
     def remember(self, *args):
         self.memory.append(tuple(args))
@@ -27,9 +35,9 @@ class Agent:
     def next_action(self, state):
         if np.random.rand() < self.exploration_rate:
             q_values = np.random.rand(4,1)
-            return np.argmax(q_values[:3]), q_values[3]
+            return np.argmax(q_values[:3]), q_values[3][0]
         else:
-            q_values = self.model.predict(state)
+            q_values = self.model.predict(np.array([state,]))
             return np.argmax(q_values[0][:3]), q_values[0][3]
 
     def process(self, states_short_term, winner, folded):
@@ -50,12 +58,14 @@ class Agent:
             return
         batch = sample(self.memory, BATCH_SIZE)
         for state, action, next_state, reward, end in batch:
+            next_state = np.array([next_state,])
+            state = np.array([state,])
             q_update = reward
             if not end:
-                print(next_state)
-                q_update = (reward + GAMMA * np.amax(self.model.predict(np.array([next_state,]))[0][:3]))  # Find optimal Q value.
+                #print(next_state)
+                q_update = (reward + GAMMA * np.amax(self.model.predict(next_state)[0][:3]))  # Find optimal Q value.
                 # Index is only because predict returns a multidim array but only one input was given, so only one output is given just with shape (1,2)
-            q_values = self.model.predict(np.array([state,]))
+            q_values = self.model.predict(state)
             q_values[0][action[0]] = q_update
             self.model.fit(state, q_values, verbose=0)
         self.exploration_rate *= EXPLORATION_DECAY
@@ -76,13 +86,14 @@ def main():
         while w == -1:
             turn = game.turn
             action = agent.next_action(state)
-            print(action)
+            #print(action)
             game.step(action)
             next_state, money_change, w = game.observe()
             #print(w)
             end = False if w is -1 else True
             states_short_term.append((turn, state, action, next_state, money_change, end))
             state = next_state
+            #print(state)
             agent.experience_replay()
         agent.process(states_short_term, winner=w, folded=game.get_folded_players())
 
