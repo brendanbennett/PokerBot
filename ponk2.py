@@ -326,7 +326,7 @@ class Ponk:
         elif action[0] == 'r':
             if self.check:
                 self.check = False
-            r = abs(math.ceil(float(action[1:])))
+            r = int(action[1:])
             self.players[self.turn].raise_bet(r + self.get_previous_bet(self.turn) - self.players[self.turn].bet_amount)
         else:
             raise Exception
@@ -368,14 +368,14 @@ class Ponk:
     def step(self, action):
         if self.winner is None:
             if action[0] == 0:
-                print(self.current_player().name + ' called')
+                #print(self.current_player().name + ' called')
                 self.take_turn('c')
             elif action[0] == 1:
-                r = str(action[1]*self.players[self.turn].money)
-                print(self.current_player().name + ' raised '+ r)
+                r = str(math.ceil(action[1]*self.players[self.turn].money) + (self.SMB*2))
+                #print(self.current_player().name + ' raised '+ r)
                 self.take_turn('r' + r)
             elif action[0] == 2:
-                print(self.current_player().name + ' folded')
+                #print(self.current_player().name + ' folded')
                 self.take_turn('f')
 
     def reset_for_next_hand(self):

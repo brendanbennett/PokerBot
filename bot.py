@@ -20,7 +20,8 @@ class Agent:
 
     def create_model(self):
         input = Input(shape=(113,))
-        x = Dense(128, activation="relu")(input)
+        x = Dense(196, activation="relu")(input)
+        x = Dense(128, activation='relu')(x)
         output_move = Dense(3, activation="linear")(x)
         output_raise = Dense(1, activation="relu")(x)
         output = concatenate([output_move, output_raise], axis=1)
@@ -40,16 +41,14 @@ class Agent:
             q_values = self.model.predict(np.array([state,]))
             return np.argmax(q_values[0][:3]), q_values[0][3]
 
-    def process(self, states_short_term, winner, folded):
+    def process(self, states_short_term, winner, folded, winnings):
+        # Short term states are (turn, state, action, next_state, money_change, end)
         # To save states as (state, action, next_state, reward)
         # The reward is calculated after the hand is complete
         for s in states_short_term:
             win = True if s[0] == winner else False
             fold = True if s[0] in folded else False
-            if fold:
-                reward = s[4]/4 # Adjust
-            else:
-                reward = s[4]
+            reward = winnings[s[0]]
 
             self.remember(s[1], s[2], s[3], reward, s[5])
 
@@ -95,7 +94,8 @@ def main():
             state = next_state
             #print(state)
             agent.experience_replay()
-        agent.process(states_short_term, winner=w, folded=game.get_folded_players())
+        winnings = [p.get_money_diff() for p in game.players]
+        agent.process(states_short_term, winner=w, folded=game.get_folded_players(), winnings=winnings)
 
         game.reset_for_next_hand()
 
