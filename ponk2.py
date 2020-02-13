@@ -368,15 +368,17 @@ class Ponk:
     def step(self, action):
         if self.winner is None:
             if action[0] == 0:
-                #print(self.current_player().name + ' called')
+                print(self.current_player().name + ' called')
                 self.take_turn('c')
             elif action[0] == 1:
                 r = str(math.ceil(action[1]*self.players[self.turn].money) + (self.SMB*2))
-                #print(self.current_player().name + ' raised '+ r)
+                print(self.current_player().name + ' raised '+ r)
                 self.take_turn('r' + r)
             elif action[0] == 2:
-                #print(self.current_player().name + ' folded')
+                print(self.current_player().name + ' folded')
                 self.take_turn('f')
+
+        self.print_players()
 
     def reset_for_next_hand(self):
         self.winner = None

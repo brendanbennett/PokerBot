@@ -22,9 +22,9 @@ class Agent:
         input = Input(shape=(113,))
         x = Dense(196, activation="relu")(input)
         x = Dense(128, activation='relu')(x)
-        output_move = Dense(3, activation="linear")(x)
-        output_raise = Dense(1, activation="relu")(x)
-        output = concatenate([output_move, output_raise], axis=1)
+        output = Dense(2+11, activation="linear")(x)
+        #output = concatenate([output_move], axis=1)
+        # Call: 0, Fold: 1, Raise: 2-10
 
         model = Model(inputs=input, outputs=output)
         model.compile(optimizer=Adam(lr=0.001), loss="mse")
@@ -33,13 +33,24 @@ class Agent:
     def remember(self, *args):
         self.memory.append(tuple(args))
 
+    def action_decode(self, q_values):
+        m = np.argmax(q_values)
+        m = 0
+        if m == 0:
+            return 0, 0 # call
+        elif m == 1:
+            return 2, 0 # fold
+        else:
+            return 1, (m-2)/10# raise
+
+
     def next_action(self, state):
         if np.random.rand() < self.exploration_rate:
-            q_values = np.random.rand(4,1)
-            return np.argmax(q_values[:3]), q_values[3][0]
+            q_values = np.random.rand(13,1)
+            return self.action_decode(q_values)
         else:
             q_values = self.model.predict(np.array([state,]))
-            return np.argmax(q_values[0][:3]), q_values[0][3]
+            return self.action_decode(q_values)
 
     def process(self, states_short_term, winner, folded, winnings):
         # Short term states are (turn, state, action, next_state, money_change, end)
