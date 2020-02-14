@@ -152,6 +152,7 @@ class Ponk:
         self.winner = None
         self.check = True
         self.rotations = 0
+        self.verbose = 0
 
     def add_player(self,money,name):
         self.players.append(Player(name,money=money))
@@ -278,6 +279,7 @@ class Ponk:
             self.round = 0
         else:
             self.round += 1
+            self.start_round()
 
     def give_player_earnings(self, p_index):
         self.players[p_index].change_money(self.pot)
@@ -311,8 +313,8 @@ class Ponk:
             if self.players[self.turn].money == 0:
                 self.step_turn()
                 continue
-            print("turn: " + str(self.turn))
-            #self.print_players()
+            if self.verbose == 1:
+                print(str(self.current_player().name))
             break
 
     def take_turn(self, action):
@@ -366,19 +368,23 @@ class Ponk:
         return self.collect_data(), self.players[self.turn].get_money_diff(), w
 
     def step(self, action):
+        if self.verbose == 2:
+            self.print_players()
         if self.winner is None:
             if action[0] == 0:
-                print(self.current_player().name + ' called')
+                if self.verbose == 1:
+                    print(self.current_player().name + ' called')
                 self.take_turn('c')
             elif action[0] == 1:
                 r = str(math.ceil(action[1]*self.players[self.turn].money) + (self.SMB*2))
-                print(self.current_player().name + ' raised '+ r)
+                if self.verbose == 1:
+                    print(self.current_player().name + ' raised '+ r)
                 self.take_turn('r' + r)
             elif action[0] == 2:
-                print(self.current_player().name + ' folded')
+                if self.verbose == 1:
+                    print(self.current_player().name + ' folded')
                 self.take_turn('f')
 
-        self.print_players()
 
     def reset_for_next_hand(self):
         self.winner = None

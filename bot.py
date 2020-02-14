@@ -35,7 +35,6 @@ class Agent:
 
     def action_decode(self, q_values):
         m = np.argmax(q_values)
-        m = 0
         if m == 0:
             return 0, 0 # call
         elif m == 1:
@@ -88,12 +87,20 @@ def main():
     game.add_player(1000, "Bob")
     game.add_player(1000, "Clarisse")
 
+    steps = 0
     while True:
+        if steps % 100 == 0:
+            game.verbose = 2
+        else:
+            game.verbose = 0
         game.start_round()
         states_short_term = []
         w = -1
         state = game.observe()[0]
         while w == -1:
+            steps += 1
+            if steps % 10 == 0:
+                print(steps)
             turn = game.turn
             action = agent.next_action(state)
             #print(action)
