@@ -81,7 +81,8 @@ class Agent:
         self.exploration_rate = max(EXPLORATION_MIN, self.exploration_rate)
 
 def main():
-    agent = Agent()
+    agent0 = Agent()
+    agent1 = Agent()
     game = Ponk(1)
     game.add_player(1000, "Alice")
     game.add_player(1000, "Bob")

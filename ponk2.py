@@ -193,7 +193,8 @@ class Ponk:
 
     def win(self):
         self.give_player_earnings(self.winner)
-        print(str(self.players[self.winner].name) + " has won!")
+        if self.verbose >= 1:
+            print(str(self.players[self.winner].name) + " has won!")
 
     def current_player(self):
         return self.players[self.turn]
@@ -215,6 +216,7 @@ class Ponk:
         for i in range(self.num_players):
             for j in self.show_player(i):
                 print(j)
+        print()
 
     def get_folded_players(self):
         folded = []
@@ -254,6 +256,8 @@ class Ponk:
 
     def compare_hands(self):
         all_cards = self.show_all_cards()
+        #print('Showdown: ', all_cards)
+        #print([self.players[p].name for p in self.players_playing])
         winner_info = compare_raw(all_cards)
         return winner_info
 
@@ -274,7 +278,7 @@ class Ponk:
             self.round = 0
         elif all(self.players[p].money == 0 for p in self.players_playing):
             self.deal_com_cards(5-len(self.com_cards.cards))
-            self.winner = self.compare_hands()[0]
+            self.winner = self.players_playing[self.compare_hands()[0]]
             self.win()
             self.round = 0
         else:
@@ -399,11 +403,6 @@ class Ponk:
         self.dealer = self.mod(self.dealer + 1)
         self.deck = Deck()
         self.com_cards = Hand()
-
-#'''
-
-#'''
-
 
 #for i in ponker.current_player_show():
 #    print(i)
