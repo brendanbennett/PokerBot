@@ -89,23 +89,24 @@ def main():
 
     steps = 0
     show = True
+    game.verbose = 1
     while True:
-        game.verbose = 2 if show else 0
         show = False
         game.start_round()
         states_short_term = []
         w = -1
         state = game.observe()[0]
         while w == -1:
-            if steps % 100 == 0:
-                show = True
             steps += 1
-            if steps % 10 == 0:
-                print(steps)
+            if steps % 100 == 0:
+                print('Steps = '+str(steps))
             turn = game.turn
             action = agent.next_action(state)
-            #print(action)
-            game.step(action)
+            if game.hand_num % 50 == 0:
+                game.display()
+                game.step(action,show=True)
+            else:
+                game.step(action, show=False)
             next_state, money_change, w = game.observe()
             #print(w)
             end = False if w is -1 else True
