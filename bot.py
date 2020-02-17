@@ -20,8 +20,9 @@ class Agent:
 
     def create_model(self):
         input = Input(shape=(113,))
-        x = Dense(196, activation="relu")(input)
+        x = Dense(192, activation="relu")(input)
         x = Dense(128, activation='relu')(x)
+        x = Dense(64, activation='relu')(x)
         output = Dense(2+11, activation="linear")(x)
         #output = concatenate([output_move], axis=1)
         # Call: 0, Fold: 1, Raise: 2-10
@@ -58,7 +59,7 @@ class Agent:
         for s in states_short_term:
             win = True if s[0] == winner else False
             fold = True if s[0] in folded else False
-            reward = winnings[s[0]]
+            reward = winnings[s[0]] * 1.2 if win else winnings[s[0]]
 
             self.remember(s[1], s[2], s[3], reward, s[5])
 
