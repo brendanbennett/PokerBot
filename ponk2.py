@@ -3,8 +3,9 @@ from comparator import compare_raw
 import numpy as np
 import math
 
-VALUES = ['2','3','4','5','6','7','8','9','10','J','Q','K','A']
-SUITS = ['C','D','H','S']
+VALUES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+SUITS = ['C', 'D', 'H', 'S']
+
 
 class Card:
     def __init__(self, value, suit):
@@ -23,7 +24,7 @@ class Card:
         return False
 
     def __str__(self):
-        names = {'C':'Clubs','D':'Diamonds','H':'Hearts','S':'Spades'}
+        names = {'C': 'Clubs', 'D': 'Diamonds', 'H': 'Hearts', 'S': 'Spades'}
         return self.value + ' ' + names[self.suit]
 
     def convert(self):
@@ -36,22 +37,19 @@ class Card:
         return ''.join(card)
 
     def card_to_one_hot(self):
-        hot = np.zeros((4,13))
-        hot[SUITS.index(self.suit),VALUES.index(self.value)] = 1
+        hot = np.zeros((4, 13))
+        hot[SUITS.index(self.suit), VALUES.index(self.value)] = 1
         return hot
 
 
-class Deck:
+class Hand:
     def __init__(self):
         self.cards = []
-        for value in VALUES:
-            for suit in SUITS:
-                self.cards.append(Card(value,suit))
 
     def __str__(self):
         return ', '.join([str(x) for x in self.cards])
 
-    def check_card(self,card):
+    def check_card(self, card):
         if card in self.cards:
             return True
         return False
@@ -77,16 +75,20 @@ class Deck:
 
     def to_array(self):
         if len(self.cards) == 0:
-            return np.zeros([4,13])
+            return np.zeros([4, 13])
         return sum([c.card_to_one_hot() for c in self.cards])
 
 
-class Hand(Deck):
+class Deck(Hand):
     def __init__(self):
-        self.cards = []
+        super().__init__()
+        for value in VALUES:
+            for suit in SUITS:
+                self.cards.append(Card(value, suit))
+
 
 class Player:
-    def __init__(self, name, money=None):
+    def __init__(self, name, bot, money=None):
         self.hand = Hand()
         self.name = name
         self.money = 0
@@ -95,18 +97,23 @@ class Player:
         self.INIT_MONEY = self.money
         self.bet_amount = 0
         self.fold = False
-
+        self.bot = bot
+        self.instant_change = 0
 
     def deal(self, card):
         self.hand.add_card(card)
 
     def raise_bet(self, amount):
-        if amount <= self.money and amount >= 0:
-            self.money -= amount
+        if self.money >= amount >= 0:
+            self.change_money(-amount)
             self.bet_amount += amount
         else:
             self.bet_amount += self.money
-            self.money = 0
+            self.change_money(-self.money)
+
+    def fold(self):
+        self.fold = True
+        self.instant_change = 0
 
     def get_name(self):
         return self.name
@@ -118,13 +125,14 @@ class Player:
         return self.fold
 
     def call_to(self, amount):
-        self.raise_bet(amount-self.bet_amount)
+        self.raise_bet(amount - self.bet_amount)
 
-    def bet_to_pot(self):
+    def bet_to_zero(self):
         self.bet_amount = 0
 
     def change_money(self, amount):
         self.money += amount
+        self.instant_change = amount
 
     def reset_init_money_to_money(self):
         self.INIT_MONEY = self.money
@@ -156,8 +164,8 @@ class Ponk:
         self.total_turns_in_hand = 0
         self.hand_num = 0
 
-    def add_player(self,money,name):
-        self.players.append(Player(name,money=money))
+    def add_player(self, money, name, bot):
+        self.players.append(Player(name, bot, money=money))
         self.players_playing.append(self.num_players)
         self.num_players += 1
 
@@ -173,7 +181,7 @@ class Ponk:
             self.players[i].deal(self.deck.pop_random())
 
     def next_not_fold(self, p_index):
-        for i in range(p_index+1, p_index + self.num_players):
+        for i in range(p_index + 1, p_index + self.num_players):
             pm = self.mod(i)
             if not self.players[pm].folded():
                 return pm
@@ -184,20 +192,20 @@ class Ponk:
         self.total_turns_in_hand += 1
 
     def fold(self, p_index):
-        self.players[p_index].fold = True
+        self.players[p_index].fold()
         self.players_playing.remove(p_index)
 
     def deal_com_cards(self, n):
         for _ in range(n):
             self.com_cards.add_card(self.deck.pop_random())
 
-    def mod(self,n):
+    def mod(self, n):
         return n % self.num_players
 
     def win(self):
         self.give_player_earnings(self.winner)
         if self.verbose >= 1:
-            print(str(self.players[self.winner].name) + " has won hand "+str(self.hand_num))
+            print(str(self.players[self.winner].name) + " has won hand " + str(self.hand_num))
 
     def current_player(self):
         return self.players[self.turn]
@@ -259,8 +267,8 @@ class Ponk:
 
     def compare_hands(self):
         all_cards = self.show_all_cards()
-        #print('Showdown: ', all_cards)
-        #print([self.players[p].name for p in self.players_playing])
+        # print('Showdown: ', all_cards)
+        # print([self.players[p].name for p in self.players_playing])
         winner_info = compare_raw(all_cards)
         return winner_info
 
@@ -269,7 +277,7 @@ class Ponk:
         tot = 0
         for p in self.players:
             tot += p.bet_amount
-            p.bet_to_pot()
+            p.bet_to_zero()
         self.pot += tot
 
         if self.winner is not None:
@@ -280,7 +288,7 @@ class Ponk:
             self.win()
             self.round = 0
         elif all(self.players[p].money == 0 for p in self.players_playing):
-            self.deal_com_cards(5-len(self.com_cards.cards))
+            self.deal_com_cards(5 - len(self.com_cards.cards))
             self.winner = self.players_playing[self.compare_hands()[0]]
             self.win()
             self.round = 0
@@ -299,7 +307,6 @@ class Ponk:
         self.start_turn = self.mod(self.dealer + 3)
         self.total_turns_in_hand = 0
         self.hand_num += 1
-
 
     def check_turn(self):
         while self.winner is None:
@@ -327,8 +334,6 @@ class Ponk:
             break
 
     def take_turn(self, action):
-        #crf = input(self.get_turn_name() + ": Call, Raise or Fold? (c/r[amount]/f)")
-        #crf = self.observe()
         if action == 'f':
             self.fold(self.turn)
         elif action == 'c':
@@ -361,10 +366,10 @@ class Ponk:
     def collect_data(self):
         p = self.players[self.turn]
 
-        # 52 for hand, 52 for community cards, 3 for moneys, 3 for bets, 3 for turn (or num players) = 113
+        # 52 for hand, 52 for community cards, n for moneys, n for bets, n for turn (for n num players) = 104 + 3n
         h = p.hand.to_array().ravel()
         c = self.com_cards.to_array().ravel()
-        m = np.array([m.money/m.INIT_MONEY for m in self.players])
+        m = np.array([m.money / m.INIT_MONEY for m in self.players])
         b = np.array([i.bet_amount for i in self.players])
         t = np.zeros((self.num_players,))
         t[self.turn] = 1
@@ -373,8 +378,8 @@ class Ponk:
 
     def observe(self):
         self.check_turn()
-        w = -1 if self.winner == None else self.winner
-        return self.collect_data(), self.players[self.turn].get_money_diff(), w
+        w = -1 if self.winner is None else self.winner
+        return self.collect_data(), self.players[self.mod(self.players_playing.index(self.turn)-1)].instant_change, w
 
     def step(self, action, show=False):
         if self.winner is None:
@@ -383,9 +388,9 @@ class Ponk:
                     print(self.current_player().name + ' called')
                 self.take_turn('c')
             elif action[0] == 1:
-                r = str(math.ceil(action[1]*self.players[self.turn].money) + (self.SMB*2))
+                r = str(math.ceil(action[1] * self.players[self.turn].money) + (self.SMB * 2))
                 if show:
-                    print(self.current_player().name + ' raised '+ r)
+                    print(self.current_player().name + ' raised ' + r)
                 self.take_turn('r' + r)
             elif action[0] == 2:
                 if show:
@@ -396,7 +401,7 @@ class Ponk:
         self.winner = None
         self.round = 0
         self.players_playing = []
-        for i,p in enumerate(self.players):
+        for i, p in enumerate(self.players):
             p.fold = False
             p.hand = Hand()
             p.money = p.INIT_MONEY
@@ -407,23 +412,23 @@ class Ponk:
         self.com_cards = Hand()
 
     def display_card(self, card):
-        #┌──┐
-        #│3♠│
-        #└──┘
-        out = []
-        out.append('┌──┐')
-        out.append('│'+card.convert()[0]+['♣','♦','♥','♠'][SUITS.index(card.convert()[1].upper())]+'│')
-        out.append('└──┘')
-        return out
+        # ┌──┐
+        # │3♠│
+        # └──┘
+        c = ['┌──┐',
+             '│' + card.convert()[0] + ['♣', '♦', '♥', '♠'][SUITS.index(card.convert()[1].upper())] + '│',
+             '└──┘']
+        return c
 
     def display(self):
-        print('═'*30)
-        print('Hand '+str(self.hand_num)+'   Round '+str(self.round)+ '   Turn in hand: '+str(self.total_turns_in_hand))
+        print('═' * 30)
+        print('Hand ' + str(self.hand_num) + '   Round ' + str(self.round) + '   Turn in hand: ' + str(
+            self.total_turns_in_hand))
         names = [p.name for p in self.players]
-        for i,name in enumerate(names):
+        for i, name in enumerate(names):
             t = '•' if self.turn == i else ' '
             if i in self.players_playing:
-                names[i] = t + names[i] + ''.join([' ']*(11-len(name)))
+                names[i] = t + names[i] + ''.join([' '] * (11 - len(name)))
             else:
                 names[i] = t + names[i] + ''.join(['X'] * (11 - len(name)))
         print(' '.join(names))
@@ -434,17 +439,17 @@ class Ponk:
                 cardsflat.append(c)
         cards = [self.display_card(c) for c in cardsflat]
         for r in range(3):
-            for i,c in enumerate(cards):
+            for i, c in enumerate(cards):
                 if i % 2 == 0:
                     print(c[r], end='  ')
                 else:
                     print(c[r], end='   ')
             print()
 
-        moneys = [str(p.money)+'  '+str(p.bet_amount) for p in self.players]
-        for i,money in enumerate(moneys):
-            moneys[i] += ''.join([' ']*(12-len(money)))
-        print('',' '.join(moneys))
+        moneys = [str(p.money) + '  ' + str(p.bet_amount) for p in self.players]
+        for i, money in enumerate(moneys):
+            moneys[i] += ''.join([' '] * (12 - len(money)))
+        print('', ' '.join(moneys))
 
         cards = [self.display_card(c) for c in self.com_cards.cards]
         for r in range(3):
@@ -452,10 +457,9 @@ class Ponk:
                 print(c[r], end='  ')
             print()
 
-        print('-'*30)
+        print('-' * 30)
 
-
-
+'''
 game = Ponk(1)
 game.add_player(1000, "Alice")
 game.add_player(1000, "Bob")
@@ -463,3 +467,4 @@ game.add_player(1000, "Clarisse")
 game.start_round()
 
 game.display()
+'''
