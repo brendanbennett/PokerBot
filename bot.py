@@ -111,18 +111,15 @@ def main():
                 action = input(game.current_player().name+"'s turn: ")
             if game.hand_num % 1 == 0:
                 game.display()
-                game.step(action, show=True)
+                next_state, instant_money_change, w = game.step(action, show=True)
             else:
-                game.step(action, show=False)
-            next_state, instant_money_change, w = game.observe()
-            end = False if w is -1 else True
+                next_state, instant_money_change, w = game.step(action, show=False)
             print(instant_money_change)
+            end = False if w is -1 else True
             if game.current_player().bot:
-                states_short_term.append((turn, state, action, next_state, instant_money_change, end))
+                agent.remember(state, action, next_state, instant_money_change, end)
             state = next_state
             agent.experience_replay()
-        winnings = [p.get_money_diff() for p in game.players]
-        agent.process(states_short_term, winner=w, folded=game.get_folded_players(), winnings=winnings)
 
         game.reset_for_next_hand()
 

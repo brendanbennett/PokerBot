@@ -96,7 +96,7 @@ class Player:
             self.money = int(money)
         self.INIT_MONEY = self.money
         self.bet_amount = 0
-        self.fold = False
+        self.is_folded = False
         self.bot = bot
         self.instant_change = 0
 
@@ -112,7 +112,7 @@ class Player:
             self.change_money(-self.money)
 
     def fold(self):
-        self.fold = True
+        self.is_folded = True
         self.instant_change = 0
 
     def get_name(self):
@@ -122,7 +122,7 @@ class Player:
         return self.bet_amount
 
     def folded(self):
-        return self.fold
+        return self.is_folded
 
     def call_to(self, amount):
         self.raise_bet(amount - self.bet_amount)
@@ -377,9 +377,11 @@ class Ponk:
         return data
 
     def observe(self):
+        reward = self.players[self.mod(self.turn-1)].instant_change
+        print('Player'+str(self.mod(self.turn-1)) + ' reward '+str(reward))
         self.check_turn()
         w = -1 if self.winner is None else self.winner
-        return self.collect_data(), self.players[self.mod(self.players_playing.index(self.turn)-1)].instant_change, w
+        return self.collect_data(), reward, w
 
     def step(self, action, show=False):
         if self.winner is None:
@@ -397,12 +399,14 @@ class Ponk:
                     print(self.current_player().name + ' folded')
                 self.take_turn('f')
 
+        return self.observe()
+
     def reset_for_next_hand(self):
         self.winner = None
         self.round = 0
         self.players_playing = []
         for i, p in enumerate(self.players):
-            p.fold = False
+            p.is_folded = False
             p.hand = Hand()
             p.money = p.INIT_MONEY
             p.reset_init_money_to_money()
