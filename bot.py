@@ -1,5 +1,5 @@
 from collections import deque
-from random import sample
+from random import sample, randrange
 from keras.layers import Input, Dense
 from keras.models import Model
 from keras.optimizers import Adam
@@ -12,13 +12,15 @@ EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.01
 EXPLORATION_DECAY = 0.998
 
+RANDOM_TOURNAMENT_INTERVAL = 10
 
 class Agent:
-    def __init__(self, num_players):
+    def __init__(self, num_players, random=False):
         self.memory = deque(maxlen=1000000)
         self.exploration_rate = 1
         self.num_players = num_players
         self.model = self.create_model()
+        self.random = random
 
     def create_model(self):
         input = Input(shape=(104+(3*self.num_players),))
@@ -80,12 +82,38 @@ class Agent:
             q_values = self.model.predict(state)
             q_values[0][action[0]] = q_update
             self.model.fit(state, q_values, verbose=0)
-        self.exploration_rate *= EXPLORATION_DECAY
+        if not self.random:
+            self.exploration_rate *= EXPLORATION_DECAY
         self.exploration_rate = max(EXPLORATION_MIN, self.exploration_rate)
 
 
+class RandomAgent:
+    def action_decode(self, q_values):
+        m = np.argmax(q_values)
+        if m == 0:
+            return 0, 0  # call
+        elif m == 1:
+            return 2, 0  # fold
+        else:
+            return 1, (m - 2) / 10  # raise
+
+    def next_action(self):
+        return self.action_decode(np.random.rand(13, 1))
+
+
+class ScoreLogger:
+    def __init__(self):
+        self.scores = []
+        self.steps = []
+    def log(self,run,step):
+        self.scores.append(run)
+        self.steps.append(step)
+
+
 def main():
+    log = ScoreLogger()
     agent = Agent(4)
+    rand_agent = RandomAgent()
     game = Ponk(1)
     game.add_player(1000, "Alice", bot=True)
     game.add_player(1000, "Bob", bot=True)
@@ -95,32 +123,53 @@ def main():
     steps = 0
     game.verbose = 0
     while True:
-        game.start_round()
-        states_short_term = []
-        w = -1
-        state = game.observe()[0]
-        while w == -1:
-            steps += 1
-            if steps % 100 == 0:
-                print('Steps = ' + str(steps))
-            turn = game.turn
+        if ((game.hand_num-1)//game.num_players)%RANDOM_TOURNAMENT_INTERVAL == 0:
+            print("RANDOM TOURNAMENT GAME")
+            # Choose random players
+            bot_index = randrange(3)
 
-            if game.current_player().bot:
-                action = agent.next_action(state)
-            else:
-                action = input(game.current_player().name+"'s turn: ")
-            if game.hand_num % 1 == 0:
+            game.start_round()
+            states_short_term = []
+            w = -1
+            state = game.observe()[0]
+            while w == -1:
+                if steps % 100 == 0:
+                    print('Steps = ' + str(steps))
+                turn = game.turn
+
+                if turn == bot_index:
+                    action = agent.next_action(state)
+                else:
+                    action = rand_agent.next_action()
                 game.display()
-                next_state, instant_money_change, w = game.step(action, show=True)
-            else:
-                next_state, instant_money_change, w = game.step(action, show=False)
-            print(instant_money_change)
-            end = False if w is -1 else True
-            if game.current_player().bot:
-                agent.remember(state, action, next_state, instant_money_change, end)
-            state = next_state
-            agent.experience_replay()
+                state, _, w = game.step(action, show=True)
+            winnings = [p.get_money_diff() for p in game.players]
+            log.log(winnings[bot_index],steps)
+        else:
+            game.start_round()
+            states_short_term = []
+            w = -1
+            state = game.observe()[0]
+            while w == -1:
+                steps += 1
+                if steps % 100 == 0:
+                    print('Steps = ' + str(steps))
+                turn = game.turn
 
+                if game.current_player().bot:
+                    action = agent.next_action(state)
+                else:
+                    action = input(game.current_player().name+"'s turn: ")
+                if game.hand_num % 100 == 0:
+                    game.display()
+                    next_state, instant_money_change, w = game.step(action, show=True)
+                else:
+                    next_state, instant_money_change, w = game.step(action, show=False)
+                end = False if w is -1 else True
+                if game.current_player().bot:
+                    agent.remember(state, action, next_state, instant_money_change, end)
+                state = next_state
+                agent.experience_replay()
         game.reset_for_next_hand()
 
 

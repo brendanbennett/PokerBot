@@ -378,7 +378,7 @@ class Ponk:
 
     def observe(self):
         reward = self.players[self.mod(self.turn-1)].instant_change
-        print('Player'+str(self.mod(self.turn-1)) + ' reward '+str(reward))
+        #print('Player'+str(self.mod(self.turn-1)) + ' reward '+str(reward))
         self.check_turn()
         w = -1 if self.winner is None else self.winner
         return self.collect_data(), reward, w
