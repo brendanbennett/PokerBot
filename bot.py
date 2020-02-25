@@ -35,8 +35,8 @@ class Agent:
         model.compile(optimizer=Adam(lr=0.001), loss="mse")
         return model
 
-    def remember(self, *args):
-        self.memory.append(tuple(args))
+    def remember(self, tup):
+        self.memory.append(tup)
 
     def action_decode(self, q_values):
         m = np.argmax(q_values)
@@ -55,16 +55,21 @@ class Agent:
             q_values = self.model.predict(np.array([state, ]))
             return self.action_decode(q_values)
 
-    def process(self, states_short_term, winner, folded, winnings):
+    def process(self, states_short_term, winner, winnings):
         # Short term states are (turn, state, action, next_state, money_change, end)
         # To save states as (state, action, next_state, reward)
         # The reward is calculated after the hand is complete
-        for s in states_short_term:
-            win = True if s[0] == winner else False
-            # fold = True if s[0] in folded else False
-            reward = winnings[s[0]] * 1.2 if win else winnings[s[0]]
+        winner_final_turn = None
+        for i in range(len(states_short_term)-1,-1,-1):
+            if states_short_term[i][0] == winner:
+                winner_final_turn = i
+                #print('Player {} won on turn {}'.format(states_short_term[i][0], winner_final_turn))
+                break
 
-            self.remember(s[1], s[2], s[3], reward, s[5])
+        for i,s in enumerate(states_short_term):
+            if i == winner_final_turn:
+                self.remember((s[1], s[2], s[3], s[4]+winnings[winner], s[5]))
+                #print('Player {} is rewarded {}'.format(s[0],s[4]+winnings[winner]))
 
     def experience_replay(self):
         if len(self.memory) < BATCH_SIZE:
@@ -98,6 +103,8 @@ class RandomAgent:
             return 1, (m - 2) / 10  # raise
 
     def next_action(self):
+        actions = np.random.rand(13, 1)
+        actions[2:] = actions[2:]*(0.1) # Normalise so all (call raise fold) actions are just as likely
         return self.action_decode(np.random.rand(13, 1))
 
 
@@ -124,9 +131,9 @@ def main():
     game.verbose = 0
     while True:
         if ((game.hand_num-1)//game.num_players)%RANDOM_TOURNAMENT_INTERVAL == 0:
-            print("RANDOM TOURNAMENT GAME")
-            # Choose random players
             bot_index = randrange(3)
+            print("RANDOM TOURNAMENT GAME for " + game.players[bot_index].name)
+            # Choose random players
 
             game.start_round()
             states_short_term = []
@@ -160,16 +167,19 @@ def main():
                     action = agent.next_action(state)
                 else:
                     action = input(game.current_player().name+"'s turn: ")
-                if game.hand_num % 100 == 0:
+                if False:#game.hand_num % 100 == 0:
                     game.display()
                     next_state, instant_money_change, w = game.step(action, show=True)
                 else:
                     next_state, instant_money_change, w = game.step(action, show=False)
                 end = False if w is -1 else True
                 if game.current_player().bot:
-                    agent.remember(state, action, next_state, instant_money_change, end)
+                    states_short_term.append((turn, state, action, next_state, instant_money_change, end))
                 state = next_state
                 agent.experience_replay()
+            final_changes = [p.instant_change for p in game.players]
+            agent.process(states_short_term,w,final_changes)
+
         game.reset_for_next_hand()
 
 
