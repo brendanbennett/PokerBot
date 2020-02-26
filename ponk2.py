@@ -41,6 +41,15 @@ class Card:
         hot[SUITS.index(self.suit), VALUES.index(self.value)] = 1
         return hot
 
+    def display_card(self):
+        # ┌──┐
+        # │3♠│
+        # └──┘
+        c = ['┌──┐',
+             '│' + self.convert()[0] + ['♣', '♦', '♥', '♠'][SUITS.index(self.convert()[1].upper())] + '│',
+             '└──┘']
+        return c
+
 
 class Hand:
     def __init__(self):
@@ -377,8 +386,8 @@ class Ponk:
         return data
 
     def observe(self):
-        reward = self.players[self.mod(self.turn-1)].instant_change
-        #print('Player'+str(self.mod(self.turn-1)) + ' reward '+str(reward))
+        reward = self.players[self.mod(self.turn - 1)].instant_change
+        # print('Player'+str(self.mod(self.turn-1)) + ' reward '+str(reward))
         self.check_turn()
         w = -1 if self.winner is None else self.winner
         return self.collect_data(), reward, w
@@ -415,15 +424,6 @@ class Ponk:
         self.deck = Deck()
         self.com_cards = Hand()
 
-    def display_card(self, card):
-        # ┌──┐
-        # │3♠│
-        # └──┘
-        c = ['┌──┐',
-             '│' + card.convert()[0] + ['♣', '♦', '♥', '♠'][SUITS.index(card.convert()[1].upper())] + '│',
-             '└──┘']
-        return c
-
     def display(self):
         print('═' * 30)
         print('Hand ' + str(self.hand_num) + '   Round ' + str(self.round) + '   Turn in hand: ' + str(
@@ -437,11 +437,11 @@ class Ponk:
                 names[i] = t + names[i] + ''.join(['X'] * (11 - len(name)))
         print(' '.join(names))
         cards = [p.hand.cards for p in self.players]
-        cardsflat = []
+        cards_flat = []
         for i in cards:
             for c in i:
-                cardsflat.append(c)
-        cards = [self.display_card(c) for c in cardsflat]
+                cards_flat.append(c)
+        cards = [c.display_card() for c in cards_flat]
         for r in range(3):
             for i, c in enumerate(cards):
                 if i % 2 == 0:
@@ -455,20 +455,10 @@ class Ponk:
             moneys[i] += ''.join([' '] * (12 - len(money)))
         print('', ' '.join(moneys))
 
-        cards = [self.display_card(c) for c in self.com_cards.cards]
+        cards = [c.display_card() for c in self.com_cards.cards]
         for r in range(3):
             for c in cards:
                 print(c[r], end='  ')
             print()
 
         print('-' * 30)
-
-'''
-game = Ponk(1)
-game.add_player(1000, "Alice")
-game.add_player(1000, "Bob")
-game.add_player(1000, "Clarisse")
-game.start_round()
-
-game.display()
-'''

@@ -5,14 +5,27 @@ from keras.models import Model
 from keras.optimizers import Adam
 import numpy as np
 from ponk2 import Ponk
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 BATCH_SIZE = 20
 GAMMA = 0.95
 EXPLORATION_MAX = 1.0
-EXPLORATION_MIN = 0.01
+EXPLORATION_MIN = 0.1
 EXPLORATION_DECAY = 0.998
 
-RANDOM_TOURNAMENT_INTERVAL = 10
+RANDOM_TOURNAMENT_INTERVAL = 30
+
+
+def action_decode(q_values):
+    m = np.argmax(q_values)
+    if m == 0:
+        return 0, 0  # call
+    elif m == 1:
+        return 2, 0  # fold
+    else:
+        return 1, (m - 2) / 10  # raise
+
 
 class Agent:
     def __init__(self, num_players, random=False):
@@ -23,8 +36,8 @@ class Agent:
         self.random = random
 
     def create_model(self):
-        input = Input(shape=(104+(3*self.num_players),))
-        x = Dense(192, activation="relu")(input)
+        input_layer = Input(shape=(104 + (3 * self.num_players),))
+        x = Dense(192, activation="relu")(input_layer)
         x = Dense(128, activation='relu')(x)
         x = Dense(64, activation='relu')(x)
         output = Dense(2 + 11, activation="linear")(x)
@@ -38,38 +51,29 @@ class Agent:
     def remember(self, tup):
         self.memory.append(tup)
 
-    def action_decode(self, q_values):
-        m = np.argmax(q_values)
-        if m == 0:
-            return 0, 0  # call
-        elif m == 1:
-            return 2, 0  # fold
-        else:
-            return 1, (m - 2) / 10  # raise
-
     def next_action(self, state):
         if np.random.rand() < self.exploration_rate:
             q_values = np.random.rand(13, 1)
-            return self.action_decode(q_values)
+            return action_decode(q_values)
         else:
             q_values = self.model.predict(np.array([state, ]))
-            return self.action_decode(q_values)
+            return action_decode(q_values)
 
     def process(self, states_short_term, winner, winnings):
         # Short term states are (turn, state, action, next_state, money_change, end)
         # To save states as (state, action, next_state, reward)
         # The reward is calculated after the hand is complete
         winner_final_turn = None
-        for i in range(len(states_short_term)-1,-1,-1):
+        for i in range(len(states_short_term) - 1, -1, -1):
             if states_short_term[i][0] == winner:
                 winner_final_turn = i
-                #print('Player {} won on turn {}'.format(states_short_term[i][0], winner_final_turn))
+                # print('Player {} won on turn {}'.format(states_short_term[i][0], winner_final_turn))
                 break
 
-        for i,s in enumerate(states_short_term):
+        for i, s in enumerate(states_short_term):
             if i == winner_final_turn:
-                self.remember((s[1], s[2], s[3], s[4]+winnings[winner], s[5]))
-                #print('Player {} is rewarded {}'.format(s[0],s[4]+winnings[winner]))
+                self.remember((s[1], s[2], s[3], s[4] + winnings[winner], s[5]))
+                # print('Player {} is rewarded {}'.format(s[0],s[4]+winnings[winner]))
 
     def experience_replay(self):
         if len(self.memory) < BATCH_SIZE:
@@ -93,28 +97,25 @@ class Agent:
 
 
 class RandomAgent:
-    def action_decode(self, q_values):
-        m = np.argmax(q_values)
-        if m == 0:
-            return 0, 0  # call
-        elif m == 1:
-            return 2, 0  # fold
-        else:
-            return 1, (m - 2) / 10  # raise
-
-    def next_action(self):
+    @staticmethod
+    def next_action():
         actions = np.random.rand(13, 1)
-        actions[2:] = actions[2:]*(0.1) # Normalise so all (call raise fold) actions are just as likely
-        return self.action_decode(np.random.rand(13, 1))
+        actions[2:] = actions[2:] * 0.1  # Normalise so all (call raise fold) actions are just as likely
+        return action_decode(actions)
 
 
 class ScoreLogger:
     def __init__(self):
         self.scores = []
         self.steps = []
-    def log(self,run,step):
+
+    def log(self, run, step):
         self.scores.append(run)
         self.steps.append(step)
+
+    def show(self):
+        sns.scatterplot(x=self.steps, y=self.scores)
+        plt.show()
 
 
 def main():
@@ -129,14 +130,16 @@ def main():
 
     steps = 0
     game.verbose = 0
+    random_rounds = 0
+    num_tours = 1
     while True:
-        if ((game.hand_num-1)//game.num_players)%RANDOM_TOURNAMENT_INTERVAL == 0:
+        if (game.hand_num // game.num_players) * game.num_players % RANDOM_TOURNAMENT_INTERVAL == 0:
+            random_rounds += 1
+            # Choose random agents
             bot_index = randrange(3)
             print("RANDOM TOURNAMENT GAME for " + game.players[bot_index].name)
-            # Choose random players
 
             game.start_round()
-            states_short_term = []
             w = -1
             state = game.observe()[0]
             while w == -1:
@@ -151,7 +154,13 @@ def main():
                 game.display()
                 state, _, w = game.step(action, show=True)
             winnings = [p.get_money_diff() for p in game.players]
-            log.log(winnings[bot_index],steps)
+            log.log(winnings[bot_index], steps)
+            if random_rounds == game.num_players:
+                num_tours += 1
+                random_rounds = 0
+            if num_tours % 10 == 0:
+                log.show()
+
         else:
             game.start_round()
             states_short_term = []
@@ -166,8 +175,8 @@ def main():
                 if game.current_player().bot:
                     action = agent.next_action(state)
                 else:
-                    action = input(game.current_player().name+"'s turn: ")
-                if False:#game.hand_num % 100 == 0:
+                    action = input(game.current_player().name + "'s turn: ")
+                if False:  # game.hand_num % 100 == 0:
                     game.display()
                     next_state, instant_money_change, w = game.step(action, show=True)
                 else:
@@ -178,7 +187,7 @@ def main():
                 state = next_state
                 agent.experience_replay()
             final_changes = [p.instant_change for p in game.players]
-            agent.process(states_short_term,w,final_changes)
+            agent.process(states_short_term, w, final_changes)
 
         game.reset_for_next_hand()
 
