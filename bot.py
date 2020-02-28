@@ -9,10 +9,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 BATCH_SIZE = 20
-GAMMA = 0.95
+GAMMA_MIN = 0.6
+GAMMA_MAX = 0.95
+GAMMA_GROWTH = 0.005
 EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.1
-EXPLORATION_DECAY = 0.998
+EXPLORATION_DECAY = 0.999
 
 RANDOM_TOURNAMENT_INTERVAL = 30
 
@@ -28,12 +30,12 @@ def action_decode(q_values):
 
 
 class Agent:
-    def __init__(self, num_players, random=False):
+    def __init__(self, num_players):
         self.memory = deque(maxlen=1000000)
-        self.exploration_rate = 1
+        self.exploration_rate = EXPLORATION_MAX
+        self.gamma = GAMMA_MIN
         self.num_players = num_players
         self.model = self.create_model()
-        self.random = random
 
     def create_model(self):
         input_layer = Input(shape=(104 + (3 * self.num_players),))
@@ -44,7 +46,7 @@ class Agent:
         # output = concatenate([output_move], axis=1)
         # Call: 0, Fold: 1, Raise: 2-10
 
-        model = Model(inputs=input, outputs=output)
+        model = Model(inputs=input_layer, outputs=output)
         model.compile(optimizer=Adam(lr=0.001), loss="mse")
         return model
 
@@ -85,14 +87,18 @@ class Agent:
             q_update = reward
             if not end:
                 # print(next_state)
-                q_update = (reward + GAMMA * np.amax(self.model.predict(next_state)[0][:3]))  # Find optimal Q value.
-                # Index is only because predict returns a multidim array but only one input was given, so only one
+                q_update = (reward + self.gamma * np.amax(self.model.predict(next_state)[0][:3]))  # Find optimal Q
+                # Index is only because predict returns a multi-dim array but only one input was given, so only one
                 # output is given just with shape (1,2)
+            else:
+                q_update = reward
             q_values = self.model.predict(state)
             q_values[0][action[0]] = q_update
             self.model.fit(state, q_values, verbose=0)
-        if not self.random:
-            self.exploration_rate *= EXPLORATION_DECAY
+
+        self.gamma *= GAMMA_GROWTH
+        self.gamma = min(GAMMA_MAX, self.gamma)
+        self.exploration_rate *= EXPLORATION_DECAY
         self.exploration_rate = max(EXPLORATION_MIN, self.exploration_rate)
 
 
