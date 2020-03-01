@@ -1,13 +1,17 @@
 from collections import deque
 from random import sample, randrange
 from keras.layers import Input, Dense
-from keras.models import Model
+from keras.models import Model, load_model
 from keras.optimizers import Adam
 import numpy as np
 from ponk2 import Ponk
 import matplotlib.pyplot as plt
 import seaborn as sns
+from os import listdir
+import json
+from time import sleep
 
+TRAINING_DIR = "training/"
 BATCH_SIZE = 20
 GAMMA_MIN = 0.6
 GAMMA_MAX = 0.95
@@ -101,6 +105,12 @@ class Agent:
         self.exploration_rate *= EXPLORATION_DECAY
         self.exploration_rate = max(EXPLORATION_MIN, self.exploration_rate)
 
+    def save(self, info):
+        self.model.save(TRAINING_DIR+"model.h5")
+        with open(TRAINING_DIR+"info.json", "w+") as f:
+            json.dump(info, f)
+        print("Saved model")
+
 
 class RandomAgent:
     @staticmethod
@@ -122,6 +132,17 @@ class ScoreLogger:
     def show(self):
         sns.scatterplot(x=self.steps, y=self.scores)
         plt.show()
+        sleep(2)
+        plt.close('all')
+
+    def save(self):
+        with open(TRAINING_DIR+"log.json", "w+") as f:
+            json.dump({"scores":self.scores,"steps":self.steps},f)
+
+    def load(self):
+        with open(TRAINING_DIR+"log.json", "r") as f:
+            d = json.load(f)
+            self.scores, self.steps = (d["scores"], d["steps"])
 
 
 def main():
@@ -134,10 +155,26 @@ def main():
     game.add_player(1000, "Clarisse", bot=True)
     game.add_player(1000, "Dave", bot=True)
 
-    steps = 0
     game.verbose = 0
     random_rounds = 0
+    save_next = False
+    steps = 0
     num_tours = 1
+
+    if "model.h5" in listdir(TRAINING_DIR):
+        try:
+            with open(TRAINING_DIR+"info.json", "r") as f:
+                info = json.load(f)
+            u = input("Continue training with {} steps? (y/n)".format(info["steps"]))
+            if u == "y":
+                agent.model = load_model(TRAINING_DIR+"model.h5")
+                steps = info["steps"]
+                num_tours = info["num_tours"]
+                game.hand_num = info["hand_num"]
+                log.load()
+        except FileNotFoundError:
+            pass
+
     while True:
         if (game.hand_num // game.num_players) * game.num_players % RANDOM_TOURNAMENT_INTERVAL == 0:
             random_rounds += 1
@@ -164,8 +201,8 @@ def main():
             if random_rounds == game.num_players:
                 num_tours += 1
                 random_rounds = 0
-            if num_tours % 10 == 0:
-                log.show()
+                #if num_tours % 1 == 0:
+                #    log.show()
 
         else:
             game.start_round()
@@ -192,10 +229,21 @@ def main():
                     states_short_term.append((turn, state, action, next_state, instant_money_change, end))
                 state = next_state
                 agent.experience_replay()
+                if steps%1000 == 0:
+                    save_next = True
             final_changes = [p.instant_change for p in game.players]
             agent.process(states_short_term, w, final_changes)
-
         game.reset_for_next_hand()
+
+        if save_next:
+            info = {
+                "steps":steps,
+                "hand_num":game.hand_num,
+                "num_tours":num_tours
+            }
+            agent.save(info)
+            log.save()
+            save_next = False
 
 
 if __name__ == "__main__":
