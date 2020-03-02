@@ -27,6 +27,11 @@ class Card:
         names = {'C': 'Clubs', 'D': 'Diamonds', 'H': 'Hearts', 'S': 'Spades'}
         return self.value + ' ' + names[self.suit]
 
+    def card_to_one_hot(self):
+        hot = np.zeros((4, 13))
+        hot[SUITS.index(self.suit), VALUES.index(self.value)] = 1
+        return hot
+
     def convert(self):
         card = []
         if self.value == '10':
@@ -35,11 +40,6 @@ class Card:
             card.append(self.value)
         card.append(self.suit.lower())
         return ''.join(card)
-
-    def card_to_one_hot(self):
-        hot = np.zeros((4, 13))
-        hot[SUITS.index(self.suit), VALUES.index(self.value)] = 1
-        return hot
 
     def display_card(self):
         # ┌──┐
@@ -109,8 +109,18 @@ class Player:
         self.bot = bot
         self.instant_change = 0
 
+    def get_name(self):
+        return self.name
+
+    def get_bet_amount(self):
+        return self.bet_amount
+
     def deal(self, card):
         self.hand.add_card(card)
+
+    def change_money(self, amount):
+        self.money += amount
+        self.instant_change = amount
 
     def raise_bet(self, amount):
         if self.money >= amount >= 0:
@@ -120,28 +130,11 @@ class Player:
             self.bet_amount += self.money
             self.change_money(-self.money)
 
-    def fold(self):
-        self.is_folded = True
-        self.instant_change = 0
-
-    def get_name(self):
-        return self.name
-
-    def get_bet_amount(self):
-        return self.bet_amount
-
-    def folded(self):
-        return self.is_folded
-
     def call_to(self, amount):
         self.raise_bet(amount - self.bet_amount)
 
     def bet_to_zero(self):
         self.bet_amount = 0
-
-    def change_money(self, amount):
-        self.money += amount
-        self.instant_change = amount
 
     def reset_init_money_to_money(self):
         self.INIT_MONEY = self.money
@@ -151,6 +144,13 @@ class Player:
 
     def get_money_diff(self):
         return self.INIT_MONEY - self.money
+
+    def fold(self):
+        self.is_folded = True
+        self.instant_change = 0
+
+    def folded(self):
+        return self.is_folded
 
 
 class Ponk:
@@ -178,16 +178,28 @@ class Ponk:
         self.players_playing.append(self.num_players)
         self.num_players += 1
 
+    def mod(self, n):
+        return n % self.num_players
+
     def get_turn_name(self):
         return self.players[self.turn].get_name()
 
-    def get_turn_id(self):
-        return self.turn
+    def step_turn(self):
+        self.turn = self.mod(self.turn + 1)
+        self.total_turns_in_hand += 1
 
     def _deal_hands(self):
         for i in range(len(self.players)):
             self.players[i].deal(self.deck.pop_random())
             self.players[i].deal(self.deck.pop_random())
+
+    def deal_com_cards(self, n):
+        for _ in range(n):
+            self.com_cards.add_card(self.deck.pop_random())
+
+    def fold(self, p_index):
+        self.players[p_index].fold()
+        self.players_playing.remove(p_index)
 
     def next_not_fold(self, p_index):
         for i in range(p_index + 1, p_index + self.num_players):
@@ -195,21 +207,6 @@ class Ponk:
             if not self.players[pm].folded():
                 return pm
         return None
-
-    def step_turn(self):
-        self.turn = self.mod(self.turn + 1)
-        self.total_turns_in_hand += 1
-
-    def fold(self, p_index):
-        self.players[p_index].fold()
-        self.players_playing.remove(p_index)
-
-    def deal_com_cards(self, n):
-        for _ in range(n):
-            self.com_cards.add_card(self.deck.pop_random())
-
-    def mod(self, n):
-        return n % self.num_players
 
     def win(self):
         self.give_player_earnings(self.winner)
@@ -281,30 +278,6 @@ class Ponk:
         winner_info = compare_raw(all_cards)
         return winner_info
 
-    def finish_round(self):
-        self.check = True
-        tot = 0
-        for p in self.players:
-            tot += p.bet_amount
-            p.bet_to_zero()
-        self.pot += tot
-
-        if self.winner is not None:
-            self.win()
-            self.round = 0
-        elif self.round == 3:
-            self.winner = self.compare_hands()[0]
-            self.win()
-            self.round = 0
-        elif all(self.players[p].money == 0 for p in self.players_playing):
-            self.deal_com_cards(5 - len(self.com_cards.cards))
-            self.winner = self.players_playing[self.compare_hands()[0]]
-            self.win()
-            self.round = 0
-        else:
-            self.round += 1
-            self.start_round()
-
     def give_player_earnings(self, p_index):
         self.players[p_index].change_money(self.pot)
         self.pot = 0
@@ -371,6 +344,30 @@ class Ponk:
             self.deal_com_cards(1)
         self.turn = self.start_turn
         self.rotations = 0
+
+    def finish_round(self):
+        self.check = True
+        tot = 0
+        for p in self.players:
+            tot += p.bet_amount
+            p.bet_to_zero()
+        self.pot += tot
+
+        if self.winner is not None:
+            self.win()
+            self.round = 0
+        elif self.round == 3:
+            self.winner = self.compare_hands()[0]
+            self.win()
+            self.round = 0
+        elif all(self.players[p].money == 0 for p in self.players_playing):
+            self.deal_com_cards(5 - len(self.com_cards.cards))
+            self.winner = self.players_playing[self.compare_hands()[0]]
+            self.win()
+            self.round = 0
+        else:
+            self.round += 1
+            self.start_round()
 
     def collect_data(self):
         p = self.players[self.turn]
