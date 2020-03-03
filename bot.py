@@ -88,7 +88,6 @@ class Agent:
         for state, action, next_state, reward, end in batch:
             next_state = np.array([next_state, ])
             state = np.array([state, ])
-            q_update = reward
             if not end:
                 # print(next_state)
                 q_update = (reward + self.gamma * np.amax(self.model.predict(next_state)[0][:3]))  # Find optimal Q
