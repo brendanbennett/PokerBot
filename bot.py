@@ -7,11 +7,13 @@ import numpy as np
 from ponk2 import Ponk
 import matplotlib.pyplot as plt
 import seaborn as sns
-from os import listdir
+from os import listdir, mkdir
 import json
 from time import sleep
+import re
 
 TRAINING_DIR = "training/"
+DEFAULT_SAVE = "save"
 BATCH_SIZE = 20
 GAMMA_MIN = 0.6
 GAMMA_MAX = 0.95
@@ -31,6 +33,42 @@ def action_decode(q_values):
         return 2, 0  # fold
     else:
         return 1, (m - 2) / 10  # raise
+
+def create_save_files(dir,steps,num_tours,hand_num,log,agent,name=None):
+    saves = listdir(TRAINING_DIR)
+    if name is None:
+        nums = []
+        for s in saves:
+            if re.search(rf"^{DEFAULT_SAVE}\d+",s) is not None:
+                nums.append(int(s[len(DEFAULT_SAVE):]))
+        if len(nums) > 0:
+            next = max(nums)+1
+        else:
+            next = 1
+        new_save_dir = TRAINING_DIR + DEFAULT_SAVE + str(next) + "/"
+    else:
+        for s in saves:
+            if re.search(rf"^{name}\d+", s) is not None:
+                raise OSError("File '{}' already exists!".format(name))
+        new_save_dir = TRAINING_DIR + name + "/"
+
+
+
+    mkdir(new_save_dir)
+
+    info = {
+        "steps": steps,
+        "hand_num": hand_num,
+        "num_tours": num_tours
+    }
+    agent.model.save(new_save_dir + "model.h5")
+    with open(new_save_dir + "info.json", "w+") as f:
+        json.dump(info, f)
+
+    with open(new_save_dir + "log.json", "w+") as f:
+        json.dump({"scores": log.scores, "steps": log.steps}, f)
+
+    print("Saved model")
 
 
 class Agent:
@@ -145,6 +183,22 @@ class ScoreLogger:
 
 
 def main():
+    saved = listdir(TRAINING_DIR)
+    save_name = ""
+    if len(saved) > 0:
+        print("Saves available: "+", ".join(saved))
+        while True:
+            save_name = input("Type save to work with or press enter to make a new one:")
+            if len(save_name) > 0 and save_name not in saved:
+                break
+            elif save_name in saved:
+                print("Please pick a unique name.")
+
+    if len(save_name) == 0:
+        save_name = None
+
+
+
     log = ScoreLogger()
     agent = Agent(4)
     rand_agent = RandomAgent()
@@ -160,13 +214,13 @@ def main():
     steps = 0
     num_tours = 1
 
-    if "model.h5" in listdir(TRAINING_DIR):
+    if "model.h5" in listdir(save_dir):
         try:
-            with open(TRAINING_DIR+"info.json", "r") as f:
+            with open(save_dir+"info.json", "r") as f:
                 info = json.load(f)
             u = input("Continue training with {} steps? (y/n)".format(info["steps"]))
             if u == "y":
-                agent.model = load_model(TRAINING_DIR+"model.h5")
+                agent.model = load_model(save_dir+"model.h5")
                 steps = info["steps"]
                 num_tours = info["num_tours"]
                 game.hand_num = info["hand_num"]
@@ -235,14 +289,7 @@ def main():
         game.reset_for_next_hand()
 
         if save_next:
-            info = {
-                "steps":steps,
-                "hand_num":game.hand_num,
-                "num_tours":num_tours
-            }
-            agent.save(info)
-            log.save()
-            save_next = False
+            create_save_files(TRAINING_DIR,steps,num_tours,game.hand_num,log,Agent)
 
 
 if __name__ == "__main__":
