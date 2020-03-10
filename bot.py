@@ -34,7 +34,7 @@ def action_decode(q_values):
     else:
         return 1, (m - 2) / 10  # raise
 
-def create_save_files(dir,steps,num_tours,hand_num,log,agent,name=None):
+def create_save_files(dir,steps,num_tours,hand_num,log,model,name=None):
     saves = listdir(TRAINING_DIR)
     if name is None:
         nums = []
@@ -47,21 +47,17 @@ def create_save_files(dir,steps,num_tours,hand_num,log,agent,name=None):
             next = 1
         new_save_dir = TRAINING_DIR + DEFAULT_SAVE + str(next) + "/"
     else:
-        for s in saves:
-            if re.search(rf"^{name}\d+", s) is not None:
-                raise OSError("File '{}' already exists!".format(name))
         new_save_dir = TRAINING_DIR + name + "/"
+        if name not in saves:
+            mkdir(new_save_dir)
 
-
-
-    mkdir(new_save_dir)
 
     info = {
         "steps": steps,
         "hand_num": hand_num,
         "num_tours": num_tours
     }
-    agent.model.save(new_save_dir + "model.h5")
+    model.save(new_save_dir + "model.h5")
     with open(new_save_dir + "info.json", "w+") as f:
         json.dump(info, f)
 
@@ -183,25 +179,9 @@ class ScoreLogger:
 
 
 def main():
-    saved = listdir(TRAINING_DIR)
-    save_name = ""
-    if len(saved) > 0:
-        print("Saves available: "+", ".join(saved))
-        while True:
-            save_name = input("Type save to work with or press enter to make a new one:")
-            if len(save_name) > 0 and save_name not in saved:
-                break
-            elif save_name in saved:
-                print("Please pick a unique name.")
-
-    if len(save_name) == 0:
-        save_name = None
-
-
-
     log = ScoreLogger()
     agent = Agent(4)
-    rand_agent = RandomAgent()
+    test_agent = Agent(4)
     game = Ponk(1)
     game.add_player(1000, "Alice", bot=True)
     game.add_player(1000, "Bob", bot=True)
@@ -214,26 +194,56 @@ def main():
     steps = 0
     num_tours = 1
 
-    if "model.h5" in listdir(save_dir):
-        try:
-            with open(save_dir+"info.json", "r") as f:
+    # file system
+    saved = listdir(TRAINING_DIR)
+    save_name = ""
+
+    if len(saved) > 0:
+        print("Saves available: "+", ".join(saved))
+        while True:
+            save_name = input("Type save to work with or press enter to make a new one:")
+            if save_name == "":
+                break
+            elif save_name in saved:
+                break
+            else:
+                print("Please select a valid file.")
+
+    if len(save_name) == 0:
+        while True:
+            save_name = input("Type name for new save:")
+            if save_name in saved:
+                print("Please pick a unique name.")
+            else:
+                break
+
+    try:
+        if "model.h5" in listdir(TRAINING_DIR+save_name+"/"):
+            with open(TRAINING_DIR+save_name+"/info.json", "r") as f:
                 info = json.load(f)
             u = input("Continue training with {} steps? (y/n)".format(info["steps"]))
             if u == "y":
-                agent.model = load_model(save_dir+"model.h5")
+                agent.model = load_model(TRAINING_DIR+save_name+"/model.h5")
                 steps = info["steps"]
                 num_tours = info["num_tours"]
                 game.hand_num = info["hand_num"]
                 log.load()
-        except FileNotFoundError:
-            pass
+    except FileNotFoundError:
+        pass
+
+    while True:
+        test_name = input("Select testing model {}:".format(", ".join(saved)))
+        if test_name in saved:
+            break
+        else:
+            print("Please select a valid file.")
 
     while True:
         if (game.hand_num // game.num_players) * game.num_players % RANDOM_TOURNAMENT_INTERVAL == 0:
             random_rounds += 1
-            # Choose random agents
+            # Choose testing agents
             bot_index = randrange(3)
-            print("RANDOM TOURNAMENT GAME for " + game.players[bot_index].name)
+            print("TOURNAMENT GAME for " + game.players[bot_index].name)
 
             game.start_round()
             w = -1
@@ -246,7 +256,7 @@ def main():
                 if turn == bot_index:
                     action = agent.next_action(state)
                 else:
-                    action = rand_agent.next_action()
+                    action = test_agent.next_action()
                 game.display()
                 state, _, w = game.step(action, show=True)
             winnings = [p.get_money_diff() for p in game.players]
@@ -282,14 +292,14 @@ def main():
                     states_short_term.append((turn, state, action, next_state, instant_money_change, end))
                 state = next_state
                 agent.experience_replay()
-                if steps%1000 == 0:
+                if steps%100 == 0:
                     save_next = True
             final_changes = [p.instant_change for p in game.players]
             agent.process(states_short_term, w, final_changes)
         game.reset_for_next_hand()
 
         if save_next:
-            create_save_files(TRAINING_DIR,steps,num_tours,game.hand_num,log,Agent)
+            create_save_files(TRAINING_DIR,steps,num_tours,game.hand_num,log,agent.model,name=save_name)
 
 
 if __name__ == "__main__":
