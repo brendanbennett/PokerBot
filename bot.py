@@ -238,6 +238,8 @@ def main():
         else:
             print("Please select a valid file.")
 
+    test_agent.model = load_model(TRAINING_DIR + test_name + "/model.h5")
+
     while True:
         if (game.hand_num // game.num_players) * game.num_players % RANDOM_TOURNAMENT_INTERVAL == 0:
             random_rounds += 1
@@ -256,7 +258,7 @@ def main():
                 if turn == bot_index:
                     action = agent.next_action(state)
                 else:
-                    action = test_agent.next_action()
+                    action = test_agent.next_action(state)
                 game.display()
                 state, _, w = game.step(action, show=True)
             winnings = [p.get_money_diff() for p in game.players]
@@ -292,7 +294,7 @@ def main():
                     states_short_term.append((turn, state, action, next_state, instant_money_change, end))
                 state = next_state
                 agent.experience_replay()
-                if steps%100 == 0:
+                if steps%1000 == 0:
                     save_next = True
             final_changes = [p.instant_change for p in game.players]
             agent.process(states_short_term, w, final_changes)
@@ -300,6 +302,7 @@ def main():
 
         if save_next:
             create_save_files(TRAINING_DIR,steps,num_tours,game.hand_num,log,agent.model,name=save_name)
+            save_next = False
 
 
 if __name__ == "__main__":
