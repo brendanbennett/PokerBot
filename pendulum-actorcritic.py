@@ -44,12 +44,13 @@ class DQNSolver:
         self.observation_space = observation_space
         self.memory = deque(maxlen=MEMORY_SIZE)
 
-        _,self.actor = self.create_actor()
-        _,_,self.critic = self.create_critic()
+        actor_state_input,self.actor = self.create_actor()
+        critic_state_input,critic_action_input,self.critic = self.create_critic()
 
         actor_weights = self.actor.trainable_weights
         # Find gradients with respect to the weights
-        self.actor_grads = tf.gradients(self.actor_model.output,actor_weights)
+        self.actor_grads = tf.gradients(self.actor.output,actor_weights)
+        #self.critic_grads = tf.gradients()
 
 
     def create_actor(self):
@@ -78,16 +79,15 @@ class DQNSolver:
             return
         batch = random.sample(self.memory, BATCH_SIZE)
 
+        # train Value
         for state, action, reward, state_next, terminal in batch:
             if not terminal:
                 predicted_action = self.actor.predict(state_next)
                 future_reward = self.critic.predict([state_next,predicted_action])
                 reward += GAMMA*future_reward
             self.critic.fit([state,action], reward)
-
-        for state, action, reward, state_next, terminal in batch:
-            if not terminal:
-
+            advantage = reward + GAMMA*future_reward - self.critic.predict(state)
+            self.actor.
 
 
 def cartpole():
