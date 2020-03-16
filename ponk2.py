@@ -264,7 +264,7 @@ class Ponk:
             if not self.players[pm].folded():
                 return self.players[pm].get_bet_amount()
 
-    def show_all_cards(self):
+    def convert_all_cards(self):
         all_cards = [self.com_cards.convert()]
         for p_index in self.players_playing:
             hand = self.players[p_index].hand
@@ -272,7 +272,7 @@ class Ponk:
         return ' '.join(all_cards)
 
     def compare_hands(self):
-        all_cards = self.show_all_cards()
+        all_cards = self.convert_all_cards()
         # print('Showdown: ', all_cards)
         # print([self.players[p].name for p in self.players_playing])
         winner_info = compare_raw(all_cards)
