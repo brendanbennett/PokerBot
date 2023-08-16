@@ -4,7 +4,7 @@ from keras.layers import Input, Dense
 from keras.models import Model, load_model
 from keras.optimizers import Adam
 import numpy as np
-from ponk2 import Ponk
+from ponk import Ponk
 import matplotlib.pyplot as plt
 import seaborn as sns
 from os import listdir, mkdir
@@ -17,7 +17,7 @@ DEFAULT_SAVE = "save"
 BATCH_SIZE = 20
 GAMMA_MIN = 0.6
 GAMMA_MAX = 0.95
-GAMMA_GROWTH = 0.005
+GAMMA_GROWTH = 1.005
 EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.1
 EXPLORATION_DECAY = 0.999
