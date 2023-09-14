@@ -84,9 +84,9 @@ def main():
     agent0 = Agent()
     agent1 = Agent()
     game = Ponk(1)
-    game.add_player(1000, "Alice")
-    game.add_player(1000, "Bob")
-    game.add_player(1000, "Clarisse")
+    game._add_player(1000, "Alice")
+    game._add_player(1000, "Bob")
+    game._add_player(1000, "Clarisse")
 
     steps = 0
     show = True

@@ -6,6 +6,12 @@ import math
 VALUES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
 SUITS = ['C', 'D', 'H', 'S']
 
+class PonkConfig():
+    def __init__(self, num_players: int, small_blind: int, starting_money: int, verbose: int = 0) -> None:
+        self.num_players: int = num_players
+        self.small_blind: int = small_blind
+        self.starting_money: int = starting_money
+        self.verbose = verbose
 
 class Card:
     def __init__(self, value, suit):
@@ -97,17 +103,22 @@ class Deck(Hand):
 
 
 class Player:
-    def __init__(self, name, bot, money=None):
+    def __init__(self, name, money=None):
         self.hand = Hand()
         self.name = name
         self.money = 0
         if money is not None:
             self.money = int(money)
-        self.INIT_MONEY = self.money
+        self._init_money = self.money
         self.bet_amount = 0
         self.is_folded = False
-        self.bot = bot
         self.instant_change = 0
+
+    def reset_for_next_hand(self):
+        self.instant_change = 0
+        self.bet_amount = 0
+        self.hand = Hand()
+        self.is_folded = False
 
     def get_name(self):
         return self.name
@@ -137,13 +148,13 @@ class Player:
         self.bet_amount = 0
 
     def reset_init_money_to_money(self):
-        self.INIT_MONEY = self.money
+        self._init_money = self.money
 
     def get_money(self):
         return self.money
 
     def get_money_diff(self):
-        return self.INIT_MONEY - self.money
+        return self._init_money - self.money
 
     def fold(self):
         self.is_folded = True
@@ -154,38 +165,52 @@ class Player:
 
 
 class Ponk:
-    def __init__(self, smb):
-        self.players = []
-        self.players_playing = []
+    def __init__(self, config: PonkConfig):
+        self._config = config
+
+    def reset(self):
+        self.players: list[Player] = list()
+        self.players_playing = list()
         self.start_turn = 0
         self.dealer = 0
         self.turn = 0
         self.pot = 0
         self.deck = Deck()
-        self.SMB = smb
+        self.small_blind = self._config.small_blind
         self.com_cards = Hand()
         self.round = 0
-        self.num_players = 0
+        self.num_players = self._config.num_players
         self.winner = None
         self.check = True
         self.rotations = 0
-        self.verbose = 0
+        self.verbose = self._config.verbose
         self.total_turns_in_hand = 0
         self.hand_num = 0
+        for i in range(self._config.num_players):
+            self._add_player(self._config.starting_money, name=str(i))
+        self._reset_players_playing()
 
-    def add_player(self, money, name, bot):
-        self.players.append(Player(name, bot, money=money))
-        self.players_playing.append(self.num_players)
-        self.num_players += 1
+        # Initialise round
+        self.start_round()
 
-    def mod(self, n):
+        # Return initial state
+        return self.observe()[0]
+
+    def _add_player(self, money, name):
+        """Only to be called on game creation"""
+        self.players.append(Player(name, money=money))
+
+    def _reset_players_playing(self):
+        self.players_playing = list(range(len(self.players)))
+
+    def _mod(self, n):
         return n % self.num_players
 
     def get_turn_name(self):
         return self.players[self.turn].get_name()
 
     def step_turn(self):
-        self.turn = self.mod(self.turn + 1)
+        self.turn = self._mod(self.turn + 1)
         self.total_turns_in_hand += 1
 
     def _deal_hands(self):
@@ -199,11 +224,13 @@ class Ponk:
 
     def fold(self, p_index):
         self.players[p_index].fold()
+        if self.verbose == 2:
+            print(f"players_playing = {self.players_playing}. Removing {p_index}.")
         self.players_playing.remove(p_index)
 
     def next_not_fold(self, p_index):
         for i in range(p_index + 1, p_index + self.num_players):
-            pm = self.mod(i)
+            pm = self._mod(i)
             if not self.players[pm].folded():
                 return pm
         return None
@@ -260,7 +287,7 @@ class Ponk:
 
     def get_previous_bet(self, p_index):
         for p in range(p_index - 1, p_index - self.num_players, -1):
-            pm = self.mod(p)
+            pm = self._mod(p)
             if not self.players[pm].folded():
                 return self.players[pm].get_bet_amount()
 
@@ -284,9 +311,9 @@ class Ponk:
 
     def game_setup(self):
         self._deal_hands()
-        self.players[self.mod(self.dealer + 1)].raise_bet(self.SMB)
-        self.players[self.mod(self.dealer + 2)].raise_bet(self.SMB * 2)
-        self.start_turn = self.mod(self.dealer + 3)
+        self.players[self._mod(self.dealer + 1)].raise_bet(self.small_blind)
+        self.players[self._mod(self.dealer + 2)].raise_bet(self.small_blind * 2)
+        self.start_turn = self._mod(self.dealer + 3)
         self.total_turns_in_hand = 0
         self.hand_num += 1
 
@@ -311,8 +338,6 @@ class Ponk:
             if self.players[self.turn].money == 0:
                 self.step_turn()
                 continue
-            if self.verbose >= 2:
-                print(str(self.current_player().name))
             break
 
     def take_turn(self, action):
@@ -357,7 +382,7 @@ class Ponk:
             self.win()
             self.round = 0
         elif self.round == 3:
-            self.winner = self.compare_hands()[0]
+            self.winner = self.players_playing[self.compare_hands()[0]]
             self.win()
             self.round = 0
         elif all(self.players[p].money == 0 for p in self.players_playing):
@@ -370,56 +395,65 @@ class Ponk:
             self.start_round()
 
     def collect_data(self):
-        p = self.players[self.turn]
+        p: Player = self.players[self.turn]
 
-        # 52 for hand, 52 for community cards, n for moneys, n for bets, n for turn (for n num players) = 104 + 3n
+        # 52 for hand, 52 for community cards, n for moneys, n for bets, n for turn (for n num players = 104 + 3n)
         h = p.hand.to_array().ravel()
         c = self.com_cards.to_array().ravel()
-        m = np.array([m.money / m.INIT_MONEY for m in self.players])
-        b = np.array([i.bet_amount for i in self.players])
+        m = np.array([p.money / p._init_money for p in self.players])
+        b = np.array([p.bet_amount / p._init_money for p in self.players])
         t = np.zeros((self.num_players,))
         t[self.turn] = 1
         data = np.concatenate((h, c, m, b, t))
         return data
 
     def observe(self):
-        reward = self.players[self.mod(self.turn - 1)].instant_change
+        reward = self.players[self._mod(self.turn - 1)].instant_change
         # print('Player'+str(self.mod(self.turn-1)) + ' reward '+str(reward))
         self.check_turn()
         w = -1 if self.winner is None else self.winner
         return self.collect_data(), reward, w
 
     def step(self, action, show=False):
-        if self.winner is None:
-            if action[0] == 0:
-                if show:
-                    print(self.current_player().name + ' called')
-                self.take_turn('c')
-            elif action[0] == 1:
-                r = str(math.ceil(action[1] * self.players[self.turn].money) + (self.SMB * 2))
-                if show:
-                    print(self.current_player().name + ' raised ' + r)
-                self.take_turn('r' + r)
-            elif action[0] == 2:
-                if show:
-                    print(self.current_player().name + ' folded')
-                self.take_turn('f')
+        if self.winner is not None:
+            raise Exception("Tried to step after game won")
+        
+        if action[0] == 0:
+            if show:
+                print(self.current_player().name + ' called')
+            self.take_turn('c')
+        elif action[0] == 1:
+            # TODO make raises in terms of small blinds
+            r = str(math.ceil(action[1] * self.players[self.turn].money) + (self.small_blind * 2))
+            if show:
+                print(self.current_player().name + ' raised ' + r) 
+            self.take_turn('r' + r)
+        elif action[0] == 2:
+            if show:
+                print(self.current_player().name + ' folded')
+            self.take_turn('f')
 
         return self.observe()
 
     def reset_for_next_hand(self):
         self.winner = None
         self.round = 0
-        self.players_playing = []
         for i, p in enumerate(self.players):
             p.is_folded = False
-            p.hand = Hand()
-            p.money = p.INIT_MONEY
-            p.reset_init_money_to_money()
-            self.players_playing.append(i)
-        self.dealer = self.mod(self.dealer + 1)
+            p.reset_for_next_hand()
+            # I don't why I did this
+            # p.money = p._init_money
+            # p.reset_init_money_to_money()
+        self._reset_players_playing()
+        self.dealer = self._mod(self.dealer + 1)
         self.deck = Deck()
         self.com_cards = Hand()
+
+        # Initialise round
+        self.start_round()
+
+        # Return initial state
+        return self.observe()[0]
 
     def display(self):
         print('═' * 30)
@@ -459,3 +493,39 @@ class Ponk:
             print()
 
         print('-' * 30)
+
+def human_friendly_input(game: Ponk):
+    _decoder = {"c": 0, "r": 1, "f": 2} # TODO make this friendlier
+    
+    print(game.current_player().name + "'s turn")
+    while True:
+        action_type = input("Choose action ([c]: call, [r] raise, [f]: fold):")
+        if action_type not in _decoder.keys():
+            print("Not a valid action!")
+            continue
+        break
+
+    raise_amount = 0
+    if action_type == "r":
+        while True:
+            raise_amount = input(f"fraction to raise (have {game.current_player().money}):")
+            try:
+                raise_amount = float(raise_amount)
+            except TypeError:
+                print("Not a valid number!")
+                continue
+            break
+    return _decoder[action_type], raise_amount
+    
+
+if __name__ == "__main__":
+    config = PonkConfig(num_players=4, small_blind=1, starting_money=100, verbose=2)
+    game = Ponk(config)
+    state = game.reset()
+    while True:
+        w = -1
+        while w == -1:
+            game.display()
+            action = human_friendly_input(game)
+            _, _, w = game.step(action, show = True)
+        game.reset_for_next_hand()

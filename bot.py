@@ -4,7 +4,7 @@ from keras.layers import Input, Dense
 from keras.models import Model, load_model
 from keras.optimizers import Adam
 import numpy as np
-from ponk import Ponk
+from ponk import Ponk, PonkConfig
 import matplotlib.pyplot as plt
 import seaborn as sns
 from os import listdir, mkdir
@@ -79,7 +79,6 @@ class Agent:
         input_layer = Input(shape=(104 + (3 * self.num_players),))
         x = Dense(192, activation="relu")(input_layer)
         x = Dense(128, activation='relu')(x)
-        x = Dense(64, activation='relu')(x)
         output = Dense(2 + 11, activation="linear")(x)
         # output = concatenate([output_move], axis=1)
         # Call: 0, Fold: 1, Raise: 2-10
@@ -182,13 +181,9 @@ def main():
     log = ScoreLogger()
     agent = Agent(4)
     test_agent = Agent(4)
-    game = Ponk(1)
-    game.add_player(1000, "Alice", bot=True)
-    game.add_player(1000, "Bob", bot=True)
-    game.add_player(1000, "Clarisse", bot=True)
-    game.add_player(1000, "Dave", bot=True)
+    config = PonkConfig(num_players=4, small_blind=1, starting_money=100, verbose=0)
+    game = Ponk(config)
 
-    game.verbose = 0
     random_rounds = 0
     save_next = False
     steps = 0
@@ -247,9 +242,8 @@ def main():
             bot_index = randrange(3)
             print("TOURNAMENT GAME for " + game.players[bot_index].name)
 
-            game.start_round()
+            state = game.reset()
             w = -1
-            state = game.observe()[0]
             while w == -1:
                 if steps % 100 == 0:
                     print('Steps = ' + str(steps))
@@ -270,10 +264,9 @@ def main():
                 #    log.show()
 
         else:
-            game.start_round()
+            state = game.reset()
             states_short_term = []
             w = -1
-            state = game.observe()[0]
             while w == -1:
                 steps += 1
                 if steps % 100 == 0:
