@@ -18,11 +18,11 @@ class Card:
         if value in VALUES:
             self.value = value
         else:
-            raise Exception("Invalid Value")
+            raise ValueError(f"Invalid value: {value!r}")
         if suit in SUITS:
             self.suit = suit
         else:
-            raise Exception("Invalid Suit")
+            raise ValueError(f"Invalid suit: {suit!r}")
 
     def __eq__(self, other):
         if self.suit == other.suit and self.value == other.value:
@@ -83,7 +83,7 @@ class Hand:
         if card not in self.cards:
             self.cards.append(card)
         else:
-            raise Exception("Card already in deck!")
+            raise ValueError("Card already in deck!")
 
     def convert(self):
         return ''.join([c.convert() for c in self.cards])
@@ -154,7 +154,7 @@ class Player:
         return self.money
 
     def get_money_diff(self):
-        return self._init_money - self.money
+        return self.money - self._init_money
 
     def fold(self):
         self.is_folded = True
@@ -352,7 +352,7 @@ class Ponk:
             r = int(action[1:])
             self.players[self.turn].raise_bet(r + self.get_previous_bet(self.turn) - self.players[self.turn].bet_amount)
         else:
-            raise Exception
+            raise ValueError(f"Unknown action: {action!r}")
         self.step_turn()
 
     def start_round(self):
@@ -416,8 +416,8 @@ class Ponk:
 
     def step(self, action, show=False):
         if self.winner is not None:
-            raise Exception("Tried to step after game won")
-        
+            raise RuntimeError("Tried to step after game won")
+
         if action[0] == 0:
             if show:
                 print(self.current_player().name + ' called')
@@ -426,12 +426,14 @@ class Ponk:
             # TODO make raises in terms of small blinds
             r = str(math.ceil(action[1] * self.players[self.turn].money) + (self.small_blind * 2))
             if show:
-                print(self.current_player().name + ' raised ' + r) 
+                print(self.current_player().name + ' raised ' + r)
             self.take_turn('r' + r)
         elif action[0] == 2:
             if show:
                 print(self.current_player().name + ' folded')
             self.take_turn('f')
+        else:
+            raise ValueError(f"Unknown action type: {action[0]!r}")
 
         return self.observe()
 
@@ -511,7 +513,7 @@ def human_friendly_input(game: Ponk):
             raise_amount = input(f"fraction to raise (have {game.current_player().money}):")
             try:
                 raise_amount = float(raise_amount)
-            except TypeError:
+            except ValueError:
                 print("Not a valid number!")
                 continue
             break
