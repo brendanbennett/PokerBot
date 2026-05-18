@@ -1,10 +1,12 @@
 from collections import deque
 from random import sample, randrange
-from keras.layers import Input, Dense
-from keras.models import Model, load_model
-from keras.optimizers import Adam
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import torchvision.transforms as T
 import numpy as np
-from ponk import Ponk, PonkConfig
+from env.ponk import Ponk, PonkConfig
 import matplotlib.pyplot as plt
 import seaborn as sns
 from os import listdir, mkdir
@@ -65,6 +67,21 @@ def create_save_files(dir,steps,num_tours,hand_num,log,model,name=None):
         json.dump({"scores": log.scores, "steps": log.steps}, f)
 
     print("Saved model")
+    
+    
+class model(nn.Module):
+    def __init__(self, input_size, output_size, hidden_size = 512):
+        super(model,self).__init__()
+        self.hidden_size = hidden_size
+        self.fc1 = nn.Linear(input_size, 128)
+        self.fc2 = nn.Linear(input_size, 128)
+        self.rnn= nn.RNN(input_size=128, hidden_size=hidden_size,num_layers=2,batch_first=True)
+        self.fc3 = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu()
 
 
 class Agent:

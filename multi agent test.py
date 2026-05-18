@@ -4,7 +4,7 @@ from keras.layers import Input, Dense, concatenate
 from keras.models import Model
 from keras.optimizers import Adam
 import numpy as np
-from ponk import Ponk
+from env.ponk import Ponk
 
 BATCH_SIZE = 20
 GAMMA = 0.95
