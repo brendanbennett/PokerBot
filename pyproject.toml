@@ -1,0 +1,22 @@
+[project]
+name = "pokerbot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "brendanbennett", email = "bennett.brendan@yahoo.co.uk" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10.9",
+    "seaborn>=0.13.2",
+    "torch>=2.12.0",
+    "torchvision>=0.27.0",
+]
+
+[project.scripts]
+pokerbot = "pokerbot:main"
+
+[build-system]
+requires = ["uv_build>=0.9.16,<0.10.0"]
+build-backend = "uv_build"

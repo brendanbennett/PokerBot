@@ -6,7 +6,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
 import numpy as np
-from env.ponk import Ponk, PonkConfig
+from pokerbot.env import Ponk, PonkConfig
 import matplotlib.pyplot as plt
 import seaborn as sns
 from os import listdir, mkdir
@@ -14,7 +14,7 @@ import json
 from time import sleep
 import re
 
-TRAINING_DIR = "training/"
+TRAINING_DIR = "output/"
 DEFAULT_SAVE = "save"
 BATCH_SIZE = 20
 GAMMA_MIN = 0.6
