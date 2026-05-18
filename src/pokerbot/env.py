@@ -167,33 +167,31 @@ class Player:
 class Ponk:
     def __init__(self, config: PonkConfig):
         self._config = config
+        self.num_players = self._config.num_players
+        self.small_blind = self._config.small_blind
+        self.verbose = self._config.verbose
+        self.hand_num = 0
+        self.dealer = 0
+        self.players: list[Player] = []
+        for i in range(self._config.num_players):
+            self._add_player(self._config.starting_money, name=str(i))
 
     def reset(self):
-        self.players: list[Player] = list()
-        self.players_playing = list()
+        """Reset per-hand state. Preserves players, money, hand_num, and dealer."""
+        for p in self.players:
+            p.reset_for_next_hand()
+        self._reset_players_playing()
         self.start_turn = 0
-        self.dealer = 0
         self.turn = 0
         self.pot = 0
         self.deck = Deck()
-        self.small_blind = self._config.small_blind
         self.com_cards = Hand()
         self.round = 0
-        self.num_players = self._config.num_players
         self.winner = None
         self.check = True
         self.rotations = 0
-        self.verbose = self._config.verbose
         self.total_turns_in_hand = 0
-        self.hand_num = 0
-        for i in range(self._config.num_players):
-            self._add_player(self._config.starting_money, name=str(i))
-        self._reset_players_playing()
-
-        # Initialise round
         self.start_round()
-
-        # Return initial state
         return self.observe()[0]
 
     def _add_player(self, money, name):
@@ -438,24 +436,9 @@ class Ponk:
         return self.observe()
 
     def reset_for_next_hand(self):
-        self.winner = None
-        self.round = 0
-        for i, p in enumerate(self.players):
-            p.is_folded = False
-            p.reset_for_next_hand()
-            # I don't why I did this
-            # p.money = p._init_money
-            # p.reset_init_money_to_money()
-        self._reset_players_playing()
+        """Advance to the next hand: rotate dealer, then reset per-hand state."""
         self.dealer = self._mod(self.dealer + 1)
-        self.deck = Deck()
-        self.com_cards = Hand()
-
-        # Initialise round
-        self.start_round()
-
-        # Return initial state
-        return self.observe()[0]
+        return self.reset()
 
     def display(self):
         print('═' * 30)
