@@ -1,5 +1,5 @@
 from random import choice
-from comparator import compare_raw
+from pokerbot.comparator import compare_raw
 import numpy as np
 import math
 
