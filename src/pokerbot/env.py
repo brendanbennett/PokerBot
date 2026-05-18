@@ -313,12 +313,11 @@ class Ponk:
 
     def check_equal_bets(self):
         # All players who still have chips to commit must match the highest bet.
-        # All-in players are exempt: their bet can be lower than the target.
-        active_bets = [self.players[i].bet_amount for i in self.players_playing
-                       if self.players[i].money > 0]
-        if not active_bets:
-            return True  # everyone left is all-in; nothing more to call
-        target = max(active_bets)
+        # All-in players are exempt from matching, but their bet still counts
+        # toward the target (an all-in raise must be responded to).
+        if not self.players_playing:
+            return True
+        target = max(self.players[i].bet_amount for i in self.players_playing)
         for i in self.players_playing:
             p = self.players[i]
             if p.money == 0:
