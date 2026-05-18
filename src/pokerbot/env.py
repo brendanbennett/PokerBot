@@ -111,14 +111,17 @@ class Player:
             self.money = int(money)
         self._init_money = self.money
         self.bet_amount = 0
+        self.hand_contribution = 0
         self.is_folded = False
         self.instant_change = 0
 
     def reset_for_next_hand(self):
         self.instant_change = 0
         self.bet_amount = 0
+        self.hand_contribution = 0
         self.hand = Hand()
         self.is_folded = False
+        self._init_money = self.money
 
     def get_name(self):
         return self.name
@@ -131,15 +134,14 @@ class Player:
 
     def change_money(self, amount):
         self.money += amount
-        self.instant_change = amount
+        self.instant_change += amount
 
     def raise_bet(self, amount):
-        if self.money >= amount >= 0:
-            self.change_money(-amount)
-            self.bet_amount += amount
-        else:
-            self.bet_amount += self.money
-            self.change_money(-self.money)
+        amount = max(amount, 0)
+        actual = min(amount, self.money)
+        self.bet_amount += actual
+        self.hand_contribution += actual
+        self.change_money(-actual)
 
     def call_to(self, amount):
         self.raise_bet(amount - self.bet_amount)
@@ -233,8 +235,50 @@ class Ponk:
                 return pm
         return None
 
-    def win(self):
-        self.give_player_earnings(self.winner)
+    def _distribute_pot(self):
+        """Award self.pot among non-folded players, building side pots from
+        each distinct contribution level so all-in players can only win up to
+        what they contributed."""
+        contributions = [p.hand_contribution for p in self.players]
+        eligible = [i for i in range(self.num_players) if not self.players[i].folded()]
+        if not eligible:
+            self.pot = 0
+            return
+
+        if len(eligible) == 1:
+            winner = eligible[0]
+            self.players[winner].change_money(self.pot)
+            self.winner = winner
+            self.pot = 0
+            return
+
+        levels = sorted({contributions[i] for i in eligible})
+        prev_level = 0
+        main_winner = None
+        for level in levels:
+            side_pot = sum(min(c, level) - min(c, prev_level) for c in contributions)
+            prev_level = level
+            if side_pot == 0:
+                continue
+            contenders = [i for i in eligible if contributions[i] >= level]
+            if len(contenders) == 1:
+                winners = contenders
+            else:
+                all_cards = [self.com_cards.convert()]
+                for i in contenders:
+                    all_cards.append(self.players[i].hand.convert())
+                best, choppers = compare_raw(' '.join(all_cards))
+                winners = [contenders[idx] for idx in [best, *choppers]]
+
+            share, remainder = divmod(side_pot, len(winners))
+            for idx, w in enumerate(winners):
+                bonus = remainder if idx == 0 else 0
+                self.players[w].change_money(share + bonus)
+            if main_winner is None:
+                main_winner = winners[0]
+
+        self.winner = main_winner if main_winner is not None else eligible[0]
+        self.pot = 0
         if self.verbose >= 1:
             print(str(self.players[self.winner].name) + " has won hand " + str(self.hand_num))
 
@@ -268,19 +312,19 @@ class Ponk:
         return folded
 
     def check_equal_bets(self):
-        bet = self.players[self.players_playing[0]].bet_amount
-        allin = False
+        # All players who still have chips to commit must match the highest bet.
+        # All-in players are exempt: their bet can be lower than the target.
+        active_bets = [self.players[i].bet_amount for i in self.players_playing
+                       if self.players[i].money > 0]
+        if not active_bets:
+            return True  # everyone left is all-in; nothing more to call
+        target = max(active_bets)
         for i in self.players_playing:
-            if self.players[i].bet_amount != bet:
-                if self.players[i].money == 0:
-                    allin = True
-                    break
+            p = self.players[i]
+            if p.money == 0:
+                continue
+            if p.bet_amount != target:
                 return False
-        if allin:
-            for i in self.players_playing:
-                if self.players[i].money != 0:
-                    return False
-            return True
         return True
 
     def get_previous_bet(self, p_index):
@@ -288,24 +332,7 @@ class Ponk:
             pm = self._mod(p)
             if not self.players[pm].folded():
                 return self.players[pm].get_bet_amount()
-
-    def convert_all_cards(self):
-        all_cards = [self.com_cards.convert()]
-        for p_index in self.players_playing:
-            hand = self.players[p_index].hand
-            all_cards.append(hand.convert())
-        return ' '.join(all_cards)
-
-    def compare_hands(self):
-        all_cards = self.convert_all_cards()
-        # print('Showdown: ', all_cards)
-        # print([self.players[p].name for p in self.players_playing])
-        winner_info = compare_raw(all_cards)
-        return winner_info
-
-    def give_player_earnings(self, p_index):
-        self.players[p_index].change_money(self.pot)
-        self.pot = 0
+        return 0
 
     def game_setup(self):
         self._deal_hands()
@@ -329,10 +356,15 @@ class Ponk:
             if self.players[self.turn].folded():
                 self.step_turn()
                 continue
-            if self.check_equal_bets() and self.players[self.next_not_fold(self.dealer)].bet_amount != 0 or (
-                    self.check_equal_bets() and not self.check):
-                self.finish_round()
-                continue
+            equal_bets = self.check_equal_bets()
+            if equal_bets:
+                if not self.check:
+                    self.finish_round()
+                    continue
+                opener = self.next_not_fold(self.dealer)
+                if opener is not None and self.players[opener].bet_amount != 0:
+                    self.finish_round()
+                    continue
             if self.players[self.turn].money == 0:
                 self.step_turn()
                 continue
@@ -376,17 +408,16 @@ class Ponk:
             p.bet_to_zero()
         self.pot += tot
 
-        if self.winner is not None:
-            self.win()
-            self.round = 0
-        elif self.round == 3:
-            self.winner = self.players_playing[self.compare_hands()[0]]
-            self.win()
-            self.round = 0
-        elif all(self.players[p].money == 0 for p in self.players_playing):
-            self.deal_com_cards(5 - len(self.com_cards.cards))
-            self.winner = self.players_playing[self.compare_hands()[0]]
-            self.win()
+        end_of_hand = (
+            self.winner is not None
+            or self.round == 3
+            or all(self.players[p].money == 0 for p in self.players_playing)
+        )
+
+        if end_of_hand:
+            if self.round != 3 and self.winner is None:
+                self.deal_com_cards(5 - len(self.com_cards.cards))
+            self._distribute_pot()
             self.round = 0
         else:
             self.round += 1
@@ -398,16 +429,17 @@ class Ponk:
         # 52 for hand, 52 for community cards, n for moneys, n for bets, n for turn (for n num players = 104 + 3n)
         h = p.hand.to_array().ravel()
         c = self.com_cards.to_array().ravel()
-        m = np.array([p.money / p._init_money for p in self.players])
-        b = np.array([p.bet_amount / p._init_money for p in self.players])
+        m = np.array([pl.money / pl._init_money if pl._init_money > 0 else 0.0 for pl in self.players])
+        b = np.array([pl.bet_amount / pl._init_money if pl._init_money > 0 else 0.0 for pl in self.players])
         t = np.zeros((self.num_players,))
         t[self.turn] = 1
         data = np.concatenate((h, c, m, b, t))
         return data
 
     def observe(self):
-        reward = self.players[self._mod(self.turn - 1)].instant_change
-        # print('Player'+str(self.mod(self.turn-1)) + ' reward '+str(reward))
+        prev = self.players[self._mod(self.turn - 1)]
+        reward = prev.instant_change
+        prev.instant_change = 0
         self.check_turn()
         w = -1 if self.winner is None else self.winner
         return self.collect_data(), reward, w
@@ -421,8 +453,8 @@ class Ponk:
                 print(self.current_player().name + ' called')
             self.take_turn('c')
         elif action[0] == 1:
-            # TODO make raises in terms of small blinds
-            r = str(math.ceil(action[1] * self.players[self.turn].money) + (self.small_blind * 2))
+            min_raise = self.small_blind * 2
+            r = str(max(min_raise, math.ceil(action[1] * self.players[self.turn].money)))
             if show:
                 print(self.current_player().name + ' raised ' + r)
             self.take_turn('r' + r)
