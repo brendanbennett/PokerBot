@@ -3,7 +3,10 @@
 Action space matches Ponk.step's expected (int, float) tuple:
   action_type in {0=call, 1=raise, 2=fold}, raise_frac in [0, 1].
 The raise fraction is sampled from a Beta head and only contributes to the
-log-prob/entropy when action_type == raise.
+log-prob/entropy when action_type == raise. The env may clip the sampled
+fraction to honor min_raise / all-in, so `act` exposes the Beta params and
+the categorical log-prob separately; the caller computes the combined logp
+against the *executed* fraction (see train_selfplay.collect_rollout).
 """
 from typing import TypedDict
 
@@ -57,10 +60,10 @@ class ActorCritic(nn.Module):
         cat_lp = cat.log_prob(a_type)
         beta_dist = Beta(alpha, beta)
         r_frac = beta_dist.sample().clamp(1e-4, 1 - 1e-4)
-        beta_lp = beta_dist.log_prob(r_frac)
-        is_raise = (a_type == RAISE).float()
-        logp = cat_lp + is_raise * beta_lp
-        return a_type, r_frac, logp, value
+        # Beta params returned so the caller can recompute log_prob against
+        # whatever fraction the env actually executed (env may clip to
+        # min_raise / all-in).
+        return a_type, r_frac, value, alpha, beta, cat_lp
 
     def evaluate(self, obs: torch.Tensor, a_type: torch.Tensor, r_frac: torch.Tensor):
         logits, alpha, beta, value = self._heads(obs)

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from torch.distributions import Beta
 
 from pokerbot.env import Ponk, PonkConfig
 from pokerbot.ppo import ActorCritic, compute_gae, ppo_update
@@ -40,14 +41,26 @@ def collect_rollout(model: ActorCritic, config: PonkConfig, hands: int, device: 
         while True:
             cur = env.turn
             obs_t = torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
-            a_type, r_frac, logp, value = model.act(obs_t)
+            a_type, r_frac, value, alpha, beta, cat_lp = model.act(obs_t)
             action = (int(a_type.item()), float(r_frac.item()))
             next_obs, _r, winner = env.step(action)
+
+            # Env may have clipped the raise to min_raise / all-in. Recompute
+            # logp against the executed fraction so PPO's importance ratio
+            # matches the action actually taken.
+            executed_r_frac = env.last_executed_r_frac
+            exec_r_t = torch.tensor(
+                executed_r_frac, dtype=torch.float32, device=device
+            ).clamp(1e-4, 1 - 1e-4)
+            beta_lp = Beta(alpha, beta).log_prob(exec_r_t)
+            is_raise = 1.0 if int(a_type.item()) == 1 else 0.0
+            logp = float(cat_lp.item()) + is_raise * float(beta_lp.item())
+
             per_player[cur].append({
                 "obs": obs.astype(np.float32),
                 "a_type": int(a_type.item()),
-                "r_frac": float(r_frac.item()),
-                "logp": float(logp.item()),
+                "r_frac": float(executed_r_frac),
+                "logp": logp,
                 "value": float(value.item()),
                 "reward": 0.0,
                 "done": False,
@@ -115,7 +128,7 @@ def main():
         small_blind=args.small_blind,
         starting_money=args.starting_money,
     )
-    obs_dim = 104 + 3 * args.num_players
+    obs_dim = 104 + 5 * args.num_players + 1
     model = ActorCritic(obs_dim, hidden=args.hidden).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 

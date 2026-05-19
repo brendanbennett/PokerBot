@@ -174,6 +174,7 @@ class Ponk:
         self.verbose = self._config.verbose
         self.hand_num = 0
         self.dealer = 0
+        self.last_executed_r_frac = 0.0
         self.players: list[Player] = []
         for i in range(self._config.num_players):
             self._add_player(self._config.starting_money, name=str(i))
@@ -423,10 +424,17 @@ class Ponk:
             self.start_round()
 
     def collect_data(self):
-        # Observation is rotated so the acting player is at index 0; positions
-        # 1..n-1 are the players who act after them, in turn order. The acting
-        # seat is implicit, so the old turn one-hot is replaced by a
-        # dealer-relative one-hot (same dim: 104 + 3n).
+        # Observation layout (acting player rotated to index 0; positions
+        # 1..n-1 act after them in turn order):
+        #   h   - own hand one-hot              (52)
+        #   c   - community cards one-hot       (52)
+        #   m   - money / own init_money        (n)
+        #   b   - current-round bet / init      (n)
+        #   d   - dealer one-hot in rotated frame (n)
+        #   f   - folded mask in rotated frame  (n)
+        #   hc  - hand contribution / init      (n)
+        #   pot - pot / acting player's init    (1)
+        # Total: 104 + 5n + 1.
         p: Player = self.players[self.turn]
         h = p.hand.to_array().ravel()
         c = self.com_cards.to_array().ravel()
@@ -437,7 +445,11 @@ class Ponk:
                       if self.players[i]._init_money > 0 else 0.0 for i in order])
         d = np.zeros((self.num_players,))
         d[self._mod(self.dealer - self.turn)] = 1
-        data = np.concatenate((h, c, m, b, d))
+        f = np.array([1.0 if self.players[i].folded() else 0.0 for i in order])
+        hc = np.array([self.players[i].hand_contribution / self.players[i]._init_money
+                       if self.players[i]._init_money > 0 else 0.0 for i in order])
+        pot = np.array([self.pot / p._init_money if p._init_money > 0 else 0.0])
+        data = np.concatenate((h, c, m, b, d, f, hc, pot))
         return data
 
     def observe(self):
@@ -452,16 +464,26 @@ class Ponk:
         if self.winner is not None:
             raise RuntimeError("Tried to step after game won")
 
+        self.last_executed_r_frac = 0.0
         if action[0] == 0:
             if show:
                 print(self.current_player().name + ' called')
             self.take_turn('c')
         elif action[0] == 1:
+            money_before = self.players[self.turn].money
+            prev = self.get_previous_bet(self.turn)
+            own = self.players[self.turn].bet_amount
             min_raise = self.small_blind * 2
-            r = str(max(min_raise, math.ceil(action[1] * self.players[self.turn].money)))
+            r = max(min_raise, math.ceil(action[1] * money_before))
+            # Cap so the resulting commitment (r + prev - own) never exceeds
+            # remaining money. This lets us report the exact executed fraction
+            # back to the policy for an honest PPO log-prob.
+            max_additional = money_before + own - prev
+            r = max(0, min(r, max_additional))
+            self.last_executed_r_frac = r / money_before if money_before > 0 else 0.0
             if show:
-                print(self.current_player().name + ' raised ' + r)
-            self.take_turn('r' + r)
+                print(self.current_player().name + ' raised ' + str(r))
+            self.take_turn('r' + str(r))
         elif action[0] == 2:
             if show:
                 print(self.current_player().name + ' folded')
