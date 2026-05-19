@@ -423,16 +423,21 @@ class Ponk:
             self.start_round()
 
     def collect_data(self):
+        # Observation is rotated so the acting player is at index 0; positions
+        # 1..n-1 are the players who act after them, in turn order. The acting
+        # seat is implicit, so the old turn one-hot is replaced by a
+        # dealer-relative one-hot (same dim: 104 + 3n).
         p: Player = self.players[self.turn]
-
-        # 52 for hand, 52 for community cards, n for moneys, n for bets, n for turn (for n num players = 104 + 3n)
         h = p.hand.to_array().ravel()
         c = self.com_cards.to_array().ravel()
-        m = np.array([pl.money / pl._init_money if pl._init_money > 0 else 0.0 for pl in self.players])
-        b = np.array([pl.bet_amount / pl._init_money if pl._init_money > 0 else 0.0 for pl in self.players])
-        t = np.zeros((self.num_players,))
-        t[self.turn] = 1
-        data = np.concatenate((h, c, m, b, t))
+        order = [self._mod(self.turn + i) for i in range(self.num_players)]
+        m = np.array([self.players[i].money / self.players[i]._init_money
+                      if self.players[i]._init_money > 0 else 0.0 for i in order])
+        b = np.array([self.players[i].bet_amount / self.players[i]._init_money
+                      if self.players[i]._init_money > 0 else 0.0 for i in order])
+        d = np.zeros((self.num_players,))
+        d[self._mod(self.dealer - self.turn)] = 1
+        data = np.concatenate((h, c, m, b, d))
         return data
 
     def observe(self):
